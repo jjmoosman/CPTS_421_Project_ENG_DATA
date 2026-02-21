@@ -3,62 +3,40 @@
 ## YouTube link of Sprint * Video (Make this video unlisted)
 
 ## What's New (User Facing)
- * Feature 1 or Bug Fix 1
- * Feature 2 or Bug Fix 2
- * Feature n or Bug Fix n
+ * Project Scope and Requirements Definition finalized
+ * Stakeholders made known
+ * GitHub repository created
 
 ## Work Summary (Developer Facing)
-Provide a one paragraph synposis of what your team accomplished this sprint. Don't repeat the "What's New" list of features. Instead, help the instructor understand how you went about the work described there, any barriers you overcame, and any significant learnings for your team.
+This sprint focused on understanding the foundation of the project, and planning for the next sprint in which we will begin implementing features and ultimately an application. Our team translated the stakeholder needs into a structured set of several functional and non-functional requirements. We categorized our project work into three modules: a standalone de-identification application, a user-friendly local corpus for student writing, and a backend database.
 
 ## Unfinished Work
-If applicable, explain the work you did not finish in this sprint. For issues/user stories in the current sprint that have not been closed, (a) any progress toward completion of the issues has been clearly tracked (by checking the checkboxes of  acceptance criteria), (b) a comment has been added to the issue to explain why the issue could not be completed (e.g., "we ran out of time" or "we did not anticipate it would be so much work"), and (c) the issue is added to a subsequent sprint, so that it can be addressed later.
+For the unfinished work we still need to make the application itself as well as the website. This first spring we have mainly focused on getting feedback from our client on the wants and needs for the project. Currently all of this will be worked on in the next sprint.
 
 ## Completed Issues/User Stories
-Here are links to the issues that we completed in this sprint:
 
- * URL of issue 1
- * URL of issue 2
- * URL of issue n
-
- Reminders (Remove this section when you save the file):
-  * Each issue should be assigned to a milestone
-  * Each completed issue should be assigned to a pull request
-  * Each completed pull request should include a link to a "Before and After" video
-  * All team members who contributed to the issue should be assigned to it on GitHub
-  * Each issue should be assigned story points using a label
-  * Story points contribution of each team member should be indicated in a comment
+None for this sprint 
  
  ## Incomplete Issues/User Stories
- Here are links to issues we worked on but did not complete in this sprint:
- 
- * URL of issue 1 <<One sentence explanation of why issue was not completed>>
- * URL of issue 2 <<One sentence explanation of why issue was not completed>>
- * URL of issue n <<One sentence explanation of why issue was not completed>>
- 
- Examples of explanations (Remove this section when you save the file):
-  * "We ran into a complication we did not anticipate (explain briefly)." 
-  * "We decided that the feature did not add sufficient value for us to work on it in this sprint (explain briefly)."
-  * "We could not reproduce the bug" (explain briefly).
-  * "We did not get to this issue because..." (explain briefly)
+
+None for this sprint 
 
 ## Code Files for Review
-Please review the following code files, which were actively developed during this sprint, for quality:
- * [Name of code file 1](https://github.com/your_repo/file_extension)
- * [Name of code file 2](https://github.com/your_repo/file_extension)
- * [Name of code file 3](https://github.com/your_repo/file_extension)
+
+None for this sprint 
  
 ## Retrospective Summary
-Here's what went well:
-  * Item 1
-  * Item 2
-  * Item x
+Here's what went well: 
+  * Completing work by the deadline 
+  * Meeting frequency with the team 
+  * Consistent communication with client 
  
-Here's what we'd like to improve:
-   * Item 1
-   * Item 2
-   * Item x
+Here's what we'd like to improve: 
+   * Start work on the program 
+   * Communicate more 
+   * Have a clearer goal
   
-Here are changes we plan to implement in the next sprint:
-   * Item 1
-   * Item 2
-   * Item x
+Here are changes we plan to implement in the next sprint: 
+   * Have a clear goal for the next sprint 
+   * Distribute work 
+   * Continue meetings 
