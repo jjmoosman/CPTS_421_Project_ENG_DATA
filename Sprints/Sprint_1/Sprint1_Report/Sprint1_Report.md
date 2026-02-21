@@ -1,4 +1,4 @@
-# Sprint x Report (Dates from Sprint * to Sprint *)
+# Sprint 1 Report (1/16-2/22)
 
 ## YouTube link of Sprint * Video (Make this video unlisted)
 
