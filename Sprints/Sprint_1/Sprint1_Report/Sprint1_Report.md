@@ -1,6 +1,6 @@
 # Sprint 1 Report (1/16-2/22)
 
-## YouTube link of Sprint * Video (Make this video unlisted)
+## YouTube link of Sprint: https://www.youtube.com/watch?v=AA8kG1M59Aw
 
 ## What's New (User Facing)
  * Project Scope and Requirements Definition finalized
