@@ -38,7 +38,7 @@ class Window(QMainWindow):
         """Initializer."""
         super().__init__(parent)
         self.setWindowTitle("Python Menus & Toolbars")
-        self.resize(400, 200)
+        self.resize(1920, 1080)
         self.centralWidget = QLabel("Hello, World")
         self.centralWidget.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
         self.setCentralWidget(self.centralWidget)
