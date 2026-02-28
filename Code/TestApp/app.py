@@ -15,6 +15,8 @@ class RedactorApp(QMainWindow):
         self.initUI()
         self.blacklisted_terms = set()
         self.selected_files = []
+        self.output_dir = None
+        self.temp_output_dir = None
 
     def initUI(self):
         layout = QVBoxLayout()
@@ -30,9 +32,17 @@ class RedactorApp(QMainWindow):
         btn_files = QPushButton("📄 Select Files")
         btn_files.clicked.connect(self.select_files)
         layout.addWidget(btn_files)
-        
+
         self.file_list_label = QLabel("No files selected")
         layout.addWidget(self.file_list_label)
+
+        layout.addWidget(QLabel("<br><b>Step 3: Select Destination Folder</b>"))
+        btn_files = QPushButton("Select Destination")
+        btn_files.clicked.connect(self.select_destination)
+        layout.addWidget(btn_files)
+
+        self.selected_destination_label = QLabel("No destination selected")
+        layout.addWidget(self.selected_destination_label)
 
         self.process_btn = QPushButton("🚀 DE-IDENTIFY")
         self.process_btn.clicked.connect(self.run_redaction)
@@ -58,6 +68,17 @@ class RedactorApp(QMainWindow):
         if files:
             self.selected_files = files
             self.file_list_label.setText(f"Files selected: {len(files)}")
+            
+            #set default destination if no destination set yet
+            if (self.output_dir == None):
+                self.temp_output_dir = Path(self.selected_files[0]).parent / "Redacted_Output"
+                self.selected_destination_label.setText(f"Destination selected: {self.temp_output_dir}")
+
+    def select_destination(self):
+        folder_path = QFileDialog.getExistingDirectory(self, "Select Destination Folder")
+        if folder_path:
+            self.output_dir = Path(folder_path) / "Redacted_Output" # make additional folder automatically?
+            self.selected_destination_label.setText(f"Destination selected: {self.output_dir}")
 
     def run_redaction(self):
         raw_text = self.name_input.toPlainText().split('\n')
@@ -67,15 +88,16 @@ class RedactorApp(QMainWindow):
             QMessageBox.warning(self, "Missing Data", "Need files and names!")
             return
 
-        output_dir = Path(self.selected_files[0]).parent / "Redacted_Output"
-        output_dir.mkdir(exist_ok=True)
+        if (self.output_dir == None):
+            self.output_dir = self.temp_output_dir
+        self.output_dir.mkdir(exist_ok=True)
         
         self.progress.setMaximum(len(self.selected_files))
 
         for i, f_path in enumerate(self.selected_files):
             file_path = Path(f_path)
             # Rename file to Student_X to hide identity in title
-            out_path = output_dir / f"Student_{i+1}{file_path.suffix}"
+            out_path = self.output_dir / f"Student_{i+1}{file_path.suffix}"
             
             if file_path.suffix.lower() == ".docx":
                 self.redact_docx(file_path, out_path)
@@ -84,7 +106,7 @@ class RedactorApp(QMainWindow):
             
             self.progress.setValue(i + 1)
         
-        QMessageBox.information(self, "Finished", f"Saved to: {output_dir}")
+        QMessageBox.information(self, "Finished", f"Saved to: {self.output_dir}")
 
     def redact_docx(self, input_path, output_path):
         doc = Document(input_path)
@@ -115,7 +137,28 @@ class RedactorApp(QMainWindow):
                 for cell in row.cells:
                     replace_in_element(cell)
 
-        doc.save(output_path)
+        self.docx_to_txt(doc, output_path)
+
+    def docx_to_txt(self, doc, output_path):
+        txt_output_path = Path(output_path).with_suffix(".txt")
+
+        with open(txt_output_path, "w", encoding="utf-8") as f:
+            for paragraph in doc.paragraphs:
+                f.write(paragraph.text + "\n")
+
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = []
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            row_text.append(paragraph.text)
+                    f.write(" | ".join(row_text) + "\n")
+
+            for section in doc.sections:
+                for paragraph in section.header.paragraphs:
+                    f.write(paragraph.text + "\n")
+                for paragraph in section.footer.paragraphs:
+                    f.write(paragraph.text + "\n")
 
     def redact_pdf(self, input_path, output_path):
         doc = fitz.open(input_path)
@@ -126,7 +169,17 @@ class RedactorApp(QMainWindow):
                 for rect in areas:
                     page.add_redact_annot(rect, fill=(0, 0, 0))
             page.apply_redactions()
-        doc.save(output_path)
+        self.pdf_to_txt(doc, output_path)
+
+    def pdf_to_txt(self, doc, output_path):
+        txt_output_path = Path(output_path).with_suffix(".txt")
+
+        with open(txt_output_path, "w", encoding="utf-8") as f:
+            for page in doc:
+                text = page.get_text("text")
+                text = re.sub(r'(?<!\n)\n(?!\n)', ' ', text) # removes new line after each line
+                f.write(text)
+
         doc.close()
 
 if __name__ == "__main__":
