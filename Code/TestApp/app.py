@@ -2,6 +2,7 @@ import sys
 import re
 import pandas as pd
 from pathlib import Path
+from rapidfuzz import fuzz
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, 
                              QWidget, QTextEdit, QFileDialog, QLabel, QProgressBar, QMessageBox)
 from docx import Document
@@ -108,20 +109,161 @@ class RedactorApp(QMainWindow):
         
         QMessageBox.information(self, "Finished", f"Saved to: {self.output_dir}")
 
+    def normalize_text(self, text):
+        text = text.replace("\n", " ")
+        text = re.sub(r"[._-]", " ", text)
+        text = re.sub(r"\s+", " ", text)
+        
+        return text.strip()
+
+
+    def fuzzy_replace(text, term, threshold=92):
+        norm_text = re.sub(r"[._-]", " ", text)
+        words = norm_text.split()
+
+        text_lower = text.lower()
+        term_lower = term.lower()
+
+        name_parts = term_lower().split()
+        if len(name_parts) < 2:
+            return text
+        
+        first = name_parts[0]
+        last = name_parts[-1]
+
+        for i in range(len(words)):
+            word1 = re.sub(r'[^a-zA-Z]', '', words[i]).lower()
+            if fuzz.ratio(word1, first) < threshold:
+                continue
+
+            for j in range(i + 1, min(i + 4, len(words))):
+                word2 = re.sub(r'[^a-zA-Z]', '', words[j]).lower()
+                if fuzz.ratio(word2, last) >= threshold:
+                    # Redact the entire span (includes middle name/initials)
+                    span = " ".join(words[i:j+1])
+                    text = text.replace(span, "[REDACTED]")
+                    break
+
+                # # allow small window for middle name/initial
+                # w1 = re.sub(r'[^a-zA-Z]', '', words[i]).lower()
+                # w2 = re.sub(r'[^a-zA-Z]', '', words[j]).lower()
+
+                # first_match = fuzz.ratio(w1, first) >= threshold
+                # last_match = fuzz.ratio(w2, last) >= threshold
+
+                # if first_match and last_match:
+                #     # redact entire span including middle name
+                #     span = " ".join(words[i:j+1])
+                #     text = text.replace(span, "[REDACTED]")
+        combined_words = re.sub(r"[^a-zA-Z]", "", text_lower)
+        combined_name = re.sub(r"[^a-zA-Z]", "", first + last)
+        if fuzz.ratio(combined_words, combined_name) >= threshold:
+            text = re.sub(re.escape(text), "[REDACTED]", text, flags=re.IGNORECASE)
+        return text
+    
+    def redact_emails(self, text, threshold=90):
+        email_pattern = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
+        profile_pattern = r"\b[A-Za-z0-9._-]+\b"  # catches linkedin-style usernames
+        emails = re.findall(email_pattern, text)
+        usernames = re.findall(profile_pattern, text)
+
+        for term in self.blacklisted_terms:
+            name_parts = term.lower().split()
+            if len(name_parts) < 2:
+                continue
+            first = name_parts[0]
+            last = name_parts[-1]
+
+            #email matching
+            for email in emails:
+                local_part = email.split("@")[0]
+                # Normalize separators
+                cleaned = re.sub(r"[._-]", " ", local_part).lower()
+                # Split into words (handles middle initials)
+                local_words = cleaned.split()
+                # Check if first + last appear fuzzy in local part
+                first_match = any(fuzz.ratio(w, first) >= threshold for w in local_words)
+                last_match = any(fuzz.ratio(w, last) >= threshold for w in local_words)
+
+                # Also check first initial + last name (mjohnson)
+                first_initial_last = any(
+                    w[0] == first[0] and fuzz.ratio(w[1:], last) >= threshold
+                    for w in local_words if len(w) > 1 
+                )
+                if (first_match and last_match) or first_initial_last:
+                    text = text.replace(email, "[REDACTED]")
+            for username in usernames:
+                cleaned = re.sub(r"[._-]", " ", username).lower()
+                local_words = cleaned.split()
+                first_match = any(fuzz.ratio(w, first) >= threshold for w in local_words)
+                last_match = any(fuzz.ratio(w, last) >= threshold for w in local_words)
+                first_initial_last = any(
+                    w[0] == first[0] and fuzz.ratio(w[1:], last) >= threshold
+                    for w in local_words if len(w) > 1
+                )
+                if (first_match and last_match) or first_initial_last:
+                    text = text.replace(username, "[REDACTED]")
+
+
+        # for email in emails:
+        #     local_part = email.split("@")[0]
+
+        #     # normalize separators
+        #     local_part_clean = re.sub(r"[._-]", " ", local_part)
+        #     local_words = local_part_clean.split()
+
+        #     for term in self.blacklisted_terms:
+        #         name_parts = term.lower().split()
+        #         if len(name_parts) < 2:
+        #             continue
+
+        #         first = name_parts[0]
+        #         last = name_parts[-1]
+
+        #         # email matching
+        #         for email in emails:
+        #             local_part = email.split("@")[0]
+        #             cleaned = re.sub(r"[._-]", " ", local_part).lower()
+
+        #             if fuzz.partial_ratio(cleaned, first) >= threshold and \
+        #             fuzz.partial_ratio(cleaned, last) >= threshold:
+        #                 text = text.replace(email, "[REDACTED]")
+                
+        #         # --- Username / LinkedIn matching ---
+        #         for username in usernames:
+        #             cleaned = re.sub(r"[._-]", " ", username).lower()
+        #             if fuzz.partial_ratio(cleaned, first) >= threshold and \
+        #             fuzz.partial_ratio(cleaned, last) >= threshold:
+        #                 text = text.replace(username, "[REDACTED]")
+
+        return text
+
     def redact_docx(self, input_path, output_path):
-        doc = Document(input_path)
+        # doc = Document(input_path)
         
         # Helper for run-level replacement (preserves images/formatting)
         def replace_in_element(element):
             for para in element.paragraphs:
-                for run in para.runs:
-                    original_text = run.text
-                    new_text = original_text
-                    for term in sorted(self.blacklisted_terms, key=len, reverse=True):
-                        pattern = re.compile(re.escape(term), re.IGNORECASE)
-                        new_text = pattern.sub("[REDACTED]", new_text)
-                    if new_text != original_text:
-                        run.text = new_text
+                # combines all runs (targeting split names)
+                full_text = "".join(run.text for run in para.runs)
+
+                #normalize text 
+                normalized_text = self.normalize_text(full_text)
+
+                redacted_text = normalized_text
+                # fuzzy matching for edge cases
+                for term in self.blacklisted_terms:
+                    redacted_text = self.fuzzy_replace(redacted_text, term)
+                
+                redacted_text = self.redact_emails(redacted_text)
+                
+                #if content is changed, overwrite the paragraph
+                if redacted_text != full_text:
+                    #clear runs
+                    for run in para.runs:
+                        run.text = ""
+                    para.runs[0].text = redacted_text
+
 
         # 1. Process Main Body
         replace_in_element(doc)
@@ -163,12 +305,61 @@ class RedactorApp(QMainWindow):
     def redact_pdf(self, input_path, output_path):
         doc = fitz.open(input_path)
         for page in doc:
+
+            words = page.get_text("words")
+            # --- Fuzzy name redaction ---
             for term in self.blacklisted_terms:
-                # search_for is case-insensitive by default in newer PyMuPDF
-                areas = page.search_for(term)
-                for rect in areas:
-                    page.add_redact_annot(rect, fill=(0, 0, 0))
+                name_parts = term.lower().split()
+                if len(name_parts) < 2:
+                    continue
+                first = name_parts[0]
+                last = name_parts[-1]
+
+                for i in range(len(words)):
+                    word1 = re.sub(r'[^a-zA-Z]', '', words[i][4]).lower()
+                    if fuzz.ratio(word1, first) < 90:
+                        continue
+
+                    # look ahead for last name (allow middle initial)
+                    for j in range(i + 1, min(i + 4, len(words))):
+                        word2 = re.sub(r'[^a-zA-Z]', '', words[j][4]).lower()
+
+                        if fuzz.ratio(word2, last) >= 90:
+                            x0 = min(words[i][0], words[j][0])
+                            y0 = min(words[i][1], words[j][1])
+                            x1 = max(words[i][2], words[j][2])
+                            y1 = max(words[i][3], words[j][3])
+
+                            rect = fitz.Rect(x0, y0, x1, y1)
+                            page.add_redact_annot(rect, fill=(0, 0, 0))
+                            break
+            # --- Email redaction ---
+            email_pattern = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
+            page_text = page.get_text("text")
+            emails = re.findall(email_pattern, page_text)
+
+            for email in emails:
+               local_part = email.split("@")[0]
+               cleaned = re.sub(r"[._-]", " ", local_part).lower()
+
+               for term in self.blacklisted_terms:
+                   name_parts = term.lower().split()
+                   if len(name_parts) < 2:
+                       continue
+                   first = name_parts[0]
+                   last = name_parts[-1]
+
+                   if fuzz.partial_ratio(cleaned, first) >= 90 and \
+                   fuzz.partial_ratio(cleaned, last) >= 90:
+                       
+                       areas = page.search_for(email)
+                       for rect in areas:
+                           page.add_redact_annot(rect, fill=(0, 0, 0))
+                        
             page.apply_redactions()
+
+        doc.save(output_path)
+
         self.pdf_to_txt(doc, output_path)
 
     def pdf_to_txt(self, doc, output_path):
