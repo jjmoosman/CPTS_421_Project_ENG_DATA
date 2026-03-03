@@ -117,14 +117,14 @@ class RedactorApp(QMainWindow):
         return text.strip()
 
 
-    def fuzzy_replace(text, term, threshold=92):
+    def fuzzy_replace(self, text, term, threshold=92):
         norm_text = re.sub(r"[._-]", " ", text)
         words = norm_text.split()
 
         text_lower = text.lower()
         term_lower = term.lower()
 
-        name_parts = term_lower().split()
+        name_parts = term_lower.split()
         if len(name_parts) < 2:
             return text
         
@@ -239,7 +239,7 @@ class RedactorApp(QMainWindow):
         return text
 
     def redact_docx(self, input_path, output_path):
-        # doc = Document(input_path)
+        doc = Document(input_path)
         
         # Helper for run-level replacement (preserves images/formatting)
         def replace_in_element(element):
