@@ -37,14 +37,32 @@ class RedactorApp(QMainWindow):
         self.prefix_input.setPlaceholderText("Enter file prefix (e.g. Class_Semester)")
         layout.addWidget(self.prefix_input)
 
+        # Step 3: select files
         layout.addWidget(QLabel("<br><b>Step 3: Select Student Files</b>"))
-        btn_files = QPushButton("📄 Select Files")
+
+        file_btn_layout = QVBoxLayout()
+
+        # individual file selection
+        btn_files = QPushButton("📄 Select Individual Files")
         btn_files.clicked.connect(self.select_files)
-        layout.addWidget(btn_files)
+        file_btn_layout.addWidget(btn_files)
+
+        # folder selection (all .docx/.pdf in folder)
+        btn_folder = QPushButton("📂 Select Folder (All .docx/.pdf)")
+        btn_folder.clicked.connect(self.select_folder)
+        file_btn_layout.addWidget(btn_folder)
+        layout.addLayout(file_btn_layout)
+
+        # Clear button to reset selection
+        btn_clear = QPushButton("🗑️ Clear Selection")
+        btn_clear.clicked.connect(self.clear_selection)
+        btn_clear.setStyleSheet("color: #d32f2f; font-size: 11px; border: 1px solid #d32f2f;")
+        file_btn_layout.addWidget(btn_clear)
 
         self.file_list_label = QLabel("No files selected")
         layout.addWidget(self.file_list_label)
 
+        # Step 4: select destination
         layout.addWidget(QLabel("<br><b>Step 4: Select Destination Folder</b>"))
         btn_files = QPushButton("Select Destination")
         btn_files.clicked.connect(self.select_destination)
@@ -53,6 +71,7 @@ class RedactorApp(QMainWindow):
         self.selected_destination_label = QLabel("No destination selected")
         layout.addWidget(self.selected_destination_label)
 
+        # de-identify button
         self.process_btn = QPushButton("🚀 DE-IDENTIFY")
         self.process_btn.clicked.connect(self.run_redaction)
         self.process_btn.setStyleSheet("background-color: #2E7D32; color: white; font-weight: bold; height: 40px;")
@@ -75,14 +94,36 @@ class RedactorApp(QMainWindow):
     def select_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Select Files", "", "Documents (*.docx *.pdf)")
         if files:
-            self.selected_files = files
-            self.file_list_label.setText(f"Files selected: {len(files)}")
-            
-            #set default destination if no destination set yet
-            if (self.output_dir == None):
-                self.temp_output_dir = Path(self.selected_files[0]).parent / "Redacted_Output"
-                self.selected_destination_label.setText(f"Destination selected: {self.temp_output_dir}")
+            self.add_to_selected_files(files)
 
+    def select_folder(self):
+        folder_path = QFileDialog.getExistingDirectory(self, "Select Folder of Student Writings")
+        if folder_path:
+            folder = Path(folder_path)
+            found_files = []
+            # Searching for common extensions
+            for ext in ["*.pdf", "*.docx", "*.PDF", "*.DOCX"]:
+                found_files.extend([str(f) for f in folder.glob(ext)])
+            
+            if found_files:
+                self.add_to_selected_files(found_files)
+            else:
+                QMessageBox.warning(self, "No Files Found", "No PDF or DOCX files found in that folder.")
+
+    def add_to_selected_files(self, new_files):
+        """Merges new selections with existing ones and prevents duplicates."""
+        combined = set(self.selected_files) | set(new_files)
+        self.selected_files = list(combined)
+        self.file_list_label.setText(f"Total files selected: {len(self.selected_files)}")
+        
+        if not self.output_dir and self.selected_files:
+            self.temp_output_dir = Path(self.selected_files[0]).parent / "Redacted_Output"
+            self.selected_destination_label.setText(f"Default Destination: {self.temp_output_dir}")
+
+    def clear_selection(self):
+        self.selected_files = []
+        self.file_list_label.setText("No files selected")
+        
     def select_destination(self):
         folder_path = QFileDialog.getExistingDirectory(self, "Select Destination Folder")
         if folder_path:
