@@ -4,7 +4,7 @@ import pandas as pd
 from pathlib import Path
 from rapidfuzz import fuzz
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, 
-                             QWidget, QTextEdit, QFileDialog, QLabel, QProgressBar, QMessageBox)
+                             QWidget, QTextEdit, QLineEdit, QFileDialog, QLabel, QProgressBar, QMessageBox)
 from docx import Document
 import fitz  # PyMuPDF
 
@@ -12,7 +12,7 @@ class RedactorApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("FERPA Compliance Tool")
-        self.setMinimumSize(600, 700)
+        self.setMinimumSize(600, 750)
         self.initUI()
         self.blacklisted_terms = set()
         self.selected_files = []
@@ -21,6 +21,8 @@ class RedactorApp(QMainWindow):
 
     def initUI(self):
         layout = QVBoxLayout()
+
+        # step 1: input names/ids
         layout.addWidget(QLabel("<b>Step 1: Input Names/IDs to Remove</b>"))
         self.name_input = QTextEdit()
         layout.addWidget(self.name_input)
@@ -29,7 +31,13 @@ class RedactorApp(QMainWindow):
         btn_excel.clicked.connect(self.load_excel)
         layout.addWidget(btn_excel)
 
-        layout.addWidget(QLabel("<br><b>Step 2: Select Student Files</b>"))
+        # step 2: custom file naming
+        layout.addWidget(QLabel("<br><b>Step 2: Custom File Naming (Optional)</b>"))
+        self.prefix_input = QLineEdit()
+        self.prefix_input.setPlaceholderText("Enter file prefix (e.g. Class_Semester)")
+        layout.addWidget(self.prefix_input)
+
+        layout.addWidget(QLabel("<br><b>Step 3: Select Student Files</b>"))
         btn_files = QPushButton("📄 Select Files")
         btn_files.clicked.connect(self.select_files)
         layout.addWidget(btn_files)
@@ -37,7 +45,7 @@ class RedactorApp(QMainWindow):
         self.file_list_label = QLabel("No files selected")
         layout.addWidget(self.file_list_label)
 
-        layout.addWidget(QLabel("<br><b>Step 3: Select Destination Folder</b>"))
+        layout.addWidget(QLabel("<br><b>Step 4: Select Destination Folder</b>"))
         btn_files = QPushButton("Select Destination")
         btn_files.clicked.connect(self.select_destination)
         layout.addWidget(btn_files)
@@ -88,6 +96,10 @@ class RedactorApp(QMainWindow):
         if not self.selected_files or not self.blacklisted_terms:
             QMessageBox.warning(self, "Missing Data", "Need files and names!")
             return
+        
+        # Determine prefix
+        custom_prefix = self.prefix_input.text().strip()
+        file_prefix = custom_prefix if custom_prefix else "Student"
 
         if (self.output_dir == None):
             self.output_dir = self.temp_output_dir
@@ -98,7 +110,7 @@ class RedactorApp(QMainWindow):
         for i, f_path in enumerate(self.selected_files):
             file_path = Path(f_path)
             # Rename file to Student_X to hide identity in title
-            out_path = self.output_dir / f"Student_{i+1}{file_path.suffix}"
+            out_path = self.output_dir / f"{file_prefix}_{i+1}{file_path.suffix}"
             
             if file_path.suffix.lower() == ".docx":
                 self.redact_docx(file_path, out_path)
