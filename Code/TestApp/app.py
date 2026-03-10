@@ -169,19 +169,89 @@ class RedactorApp(QMainWindow):
         
         return text.strip()
 
-    def fuzzy_replace(self, text, term, threshold=80):
-        """Simplified fuzzy replacement that handles all test cases"""
+    def fuzzy_replace(self, text, term, threshold=75):
+        """Enhanced to catch all name variations without removing entire lines"""
         name_parts = term.lower().split()
         if len(name_parts) < 2:
             return text
-    
+
         first = name_parts[0]
         last = name_parts[-1]
         first_initial = first[0]
     
-        # Split text into words with positions
-        words = list(re.finditer(r'\b\w+\b', text))
+        # Common titles
+        titles = ['dr', 'mr', 'mrs', 'ms', 'prof', 'professor', 'doc', 'doctor']
+    
+        # Create abbreviation versions
+        first_abbrev = first[:3] if len(first) > 3 else first
+        first_abbrev4 = first[:4] if len(first) > 4 else first
+    
+        # Escape special characters
+        first_escaped = re.escape(first)
+        last_escaped = re.escape(last)
+        first_initial_escaped = re.escape(first_initial)
+        first_abbrev_escaped = re.escape(first_abbrev)
+        first_abbrev4_escaped = re.escape(first_abbrev4)
+
         redacted_text = text
+    
+        # --- TITLE + LAST NAME PATTERNS ---
+        for title in titles:
+            title_escaped = re.escape(title)
+            # Dr. Moore, Dr Moore - only replace the title + last name, not the whole line
+            pattern_title = rf'\b{title_escaped}\.?\s+{last_escaped}\b'
+            # Use a lambda to preserve surrounding text
+            redacted_text = re.sub(pattern_title, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
+    
+        # --- LAST NAME ONLY PATTERNS ---
+        common_words = {'the', 'and', 'for', 'but', 'not', 'are', 'all', 'was', 'had', 
+                        'has', 'have', 'with', 'from', 'this', 'that', 'more', 'most'}
+    
+        if last not in common_words and len(last) > 2:
+            # Only redact standalone last names, not parts of other words
+            pattern_last = rf'(?<!\w){last_escaped}(?!\w)'
+            redacted_text = re.sub(pattern_last, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
+    
+        # --- STANDARD NAME PATTERNS ---
+        # These patterns only match the exact name, not surrounding text
+    
+        # First Last (including abbreviations)
+        patterns = [
+            rf'\b{first_escaped}\s+{last_escaped}\b',
+            rf'\b{first_abbrev_escaped}\s+{last_escaped}\b',
+        ]
+    
+        if first_abbrev4 != first_abbrev:
+            patterns.append(rf'\b{first_abbrev4_escaped}\s+{last_escaped}\b')
+    
+        # With separators
+        patterns.extend([
+            rf'\b{first_escaped}[._-]{last_escaped}\b',
+            rf'\b{first_abbrev_escaped}[._-]{last_escaped}\b',
+            rf'\b{first_escaped}{last_escaped}\b',  # joined
+            rf'\b{first_abbrev_escaped}{last_escaped}\b',
+        ])
+    
+        # With initials
+        patterns.extend([
+            rf'\b{first_initial_escaped}\.?\s+{last_escaped}\b',
+            rf'\b{first_initial_escaped}{last_escaped}\b',
+        ])
+    
+        # Reversed format
+        patterns.extend([
+            rf'\b{last_escaped}\s*,\s*{first_escaped}\b',
+            rf'\b{last_escaped}\s*,\s*{first_abbrev_escaped}\b',
+        ])
+    
+        # Apply all patterns
+        for pattern in patterns:
+            redacted_text = re.sub(pattern, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
+    
+        # --- WORD-BY-WORD FUZZY MATCHING ---
+        # This handles misspellings and ensures we only redact the exact name span
+        temp_text = redacted_text
+        words = list(re.finditer(r'\b\w+\b', temp_text))
         redaction_positions = []
     
         i = 0
@@ -191,62 +261,97 @@ class RedactorApp(QMainWindow):
             word_clean = re.sub(r'[^a-zA-Z]', '', word).lower()
             word_start, word_end = word_match.start(), word_match.end()
         
-            # Check if this word could be first name (or misspelling)
-            if fuzz.ratio(word_clean, first) >= threshold:
-                # Look ahead for last name (allow up to 3 words for middle names)
+            # Check for title + last name
+            if word_clean in titles and i + 1 < len(words):
+                next_word = words[i + 1].group()
+                next_clean = re.sub(r'[^a-zA-Z]', '', next_word).lower()
+            
+                if fuzz.ratio(next_clean, last) >= threshold:
+                    # Only redact the title and last name, not surrounding words
+                    start = word_start
+                    end = words[i + 1].end()
+                
+                    # Check if this span is already redacted
+                    span_text = temp_text[start:end]
+                    if span_text != "[REDACTED]":
+                        temp_text = temp_text[:start] + "[REDACTED]" + temp_text[end:]
+                        redaction_positions.append((start, start + len("[REDACTED]")))
+                        words = list(re.finditer(r'\b\w+\b', temp_text))
+                        i = -1
+                        i += 1
+                        continue
+        
+            # Check for first name + last name pattern
+            first_ratio = fuzz.ratio(word_clean, first)
+            abbrev_ratio = fuzz.ratio(word_clean, first_abbrev)
+        
+            if first_ratio >= threshold or abbrev_ratio >= threshold:
+                found_match = False
                 for j in range(i + 1, min(i + 4, len(words))):
                     last_match = words[j]
                     last_word = last_match.group()
                     last_clean = re.sub(r'[^a-zA-Z]', '', last_word).lower()
                 
                     if fuzz.ratio(last_clean, last) >= threshold:
-                        # Found first and last name - redact from first to last word
+                        # Only redact from first word to last word of the name
                         start = word_start
                         end = last_match.end()
                     
-                        # Check if already redacted
+                        # Check if this span is already redacted
+                        span_text = temp_text[start:end]
+                        if span_text != "[REDACTED]":
+                            overlap = any(r_start <= start < r_end or r_start < end <= r_end 
+                                        for r_start, r_end in redaction_positions)
+                        
+                            if not overlap:
+                                temp_text = temp_text[:start] + "[REDACTED]" + temp_text[end:]
+                                redaction_positions.append((start, start + len("[REDACTED]")))
+                                words = list(re.finditer(r'\b\w+\b', temp_text))
+                                found_match = True
+                                break
+            
+                if found_match:
+                    i = -1
+        
+            # Check for standalone last name (but only if it's not part of a longer name we already caught)
+            last_ratio = fuzz.ratio(word_clean, last)
+            if last_ratio >= threshold + 5 and word_clean not in common_words and len(word_clean) > 2:
+                # Make sure this isn't part of a first+last pattern we missed
+                is_part_of_name = False
+            
+                # Check previous word
+                if i > 0:
+                    prev_word = words[i-1].group()
+                    prev_clean = re.sub(r'[^a-zA-Z]', '', prev_word).lower()
+                    if fuzz.ratio(prev_clean, first) >= threshold or fuzz.ratio(prev_clean, first_abbrev) >= threshold:
+                        is_part_of_name = True
+            
+                # Check next word
+                if i < len(words) - 1 and not is_part_of_name:
+                    next_word = words[i+1].group()
+                    # If next word is a common word, probably not part of a name
+                    if next_word.lower() not in common_words:
+                        is_part_of_name = True
+            
+                if not is_part_of_name:
+                    start = word_start
+                    end = word_end
+                
+                    span_text = temp_text[start:end]
+                    if span_text != "[REDACTED]":
                         overlap = any(r_start <= start < r_end or r_start < end <= r_end 
                                     for r_start, r_end in redaction_positions)
                     
                         if not overlap:
-                            redacted_text = redacted_text[:start] + "[REDACTED]" + redacted_text[end:]
+                            temp_text = temp_text[:start] + "[REDACTED]" + temp_text[end:]
                             redaction_positions.append((start, start + len("[REDACTED]")))
-                        
-                            # Completely rebuild words list from new text
-                            words = list(re.finditer(r'\b\w+\b', redacted_text))
-                            # Reset i to continue from beginning (safe since we're redacting)
-                            i = -1  # Will become 0 after i += 1
-                            break
-                else:
-                    i += 1
-                    continue
-            else:
-                i += 1
-                continue
+                            words = list(re.finditer(r'\b\w+\b', temp_text))
+                            i = -1
         
             i += 1
     
-        # Handle special formats with regex (for cases not caught by word-by-word approach)
-    
-        # Case: jak-milly, jak.milly, jak_milly
-        pattern1 = rf'\b{re.escape(first)}[._-]{re.escape(last)}\b'
-        redacted_text = re.sub(pattern1, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
-    
-        # Case: jakemilly (no separator)
-        pattern2 = rf'\b{re.escape(first)}{re.escape(last)}\b'
-        redacted_text = re.sub(pattern2, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
-    
-        # Case: j a milly or j a b milly (initials)
-        pattern3 = rf'\b{re.escape(first_initial)}(?:\s+[a-z]\.?)?\s+{re.escape(last)}\b'
-        redacted_text = re.sub(pattern3, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
-    
-        # Case: milly, jake
-        pattern4 = rf'\b{re.escape(last)}\s*,\s*{re.escape(first)}\b'
-        redacted_text = re.sub(pattern4, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
-    
-        # Case: j. milly, j milly
-        pattern5 = rf'\b{re.escape(first_initial)}\.?\s+{re.escape(last)}\b'
-        redacted_text = re.sub(pattern5, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
+        if temp_text != redacted_text:
+            redacted_text = temp_text
     
         return redacted_text
         
