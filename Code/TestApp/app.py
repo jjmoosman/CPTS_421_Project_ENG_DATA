@@ -356,15 +356,21 @@ class RedactorApp(QMainWindow):
         return redacted_text
         
     def redact_emails(self, text, threshold=80):
-        """Simplified email redaction"""
+        """Enhanced email redaction - catches ALL emails AND name-related usernames"""
+    
+        # PART 1: Redact ALL email addresses (safest for FERPA)
         email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
         emails = re.findall(email_pattern, text)
     
-        # Also find usernames (LinkedIn profiles, etc.)
-        username_pattern = r'\b[A-Za-z0-9][A-Za-z0-9._-]{2,}[A-Za-z0-9]\b'
-        usernames = re.findall(username_pattern, text)
-    
         redacted_text = text
+    
+        # Redact every email found - no questions asked
+        for email in emails:
+            redacted_text = redacted_text.replace(email, "[REDACTED]")
+    
+        # PART 2: Also catch usernames/profiles that might identify students
+        username_pattern = r'\b[A-Za-z0-9][A-Za-z0-9._-]{2,}[A-Za-z0-9]\b'
+        usernames = re.findall(username_pattern, redacted_text)  # Search in already redacted text
     
         for term in self.blacklisted_terms:
             name_parts = term.lower().split()
@@ -374,51 +380,32 @@ class RedactorApp(QMainWindow):
             first = name_parts[0]
             last = name_parts[-1]
             first_initial = first[0]
-        
-            # Define all possible email/username patterns to check
-            patterns = [
-                f"{first}.{last}",     # jake.milly
-                f"{first}-{last}",      # jake-milly
-                f"{first}_{last}",      # jake_milly
-                f"{first}{last}",       # jakemilly
-                f"{first_initial}.{last}",  # j.milly
-                f"{first_initial}{last}",   # jmilly
-                f"{last}.{first}",      # milly.jake
-                f"{last}-{first}",      # milly-jake
-                f"{last}_{first}",      # milly_jake
-            ]
-        
-            # Check emails
-            for email in emails:
-                local = email.split('@')[0].lower()
             
-                # Check each pattern
-                for pattern in patterns:
-                    if pattern in local:
-                        redacted_text = redacted_text.replace(email, "[REDACTED]")
-                        break
-                else:
-                    # Fuzzy check if local part contains both names
-                    if fuzz.partial_ratio(local, first) >= threshold and \
-                    fuzz.partial_ratio(local, last) >= threshold:
-                        redacted_text = redacted_text.replace(email, "[REDACTED]")
-        
-            # Check usernames (same logic)
+            # Define patterns
+            patterns = [
+                f"{first}.{last}", f"{first}-{last}", f"{first}_{last}",
+                f"{first}{last}", f"{first_initial}.{last}", f"{first_initial}{last}",
+                f"{last}.{first}", f"{last}-{first}", f"{last}_{first}",
+            ]
+            
+            # Check usernames
             for username in usernames:
-                if '@' in username:
+                if '@' in username or "[REDACTED]" in username:
                     continue
                 
                 username_lower = username.lower()
-            
+                
+                # Direct pattern matching
                 for pattern in patterns:
                     if pattern in username_lower:
                         redacted_text = redacted_text.replace(username, "[REDACTED]")
                         break
                 else:
+                    # Fuzzy check
                     if fuzz.partial_ratio(username_lower, first) >= threshold and \
                     fuzz.partial_ratio(username_lower, last) >= threshold:
                         redacted_text = redacted_text.replace(username, "[REDACTED]")
-    
+        
         return redacted_text
 
     def redact_docx(self, input_path, output_path):
