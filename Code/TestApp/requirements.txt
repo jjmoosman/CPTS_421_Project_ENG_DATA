@@ -4,3 +4,4 @@ openpyxl
 python-docx
 pymupdf
 rapidfuzz
+numpy
