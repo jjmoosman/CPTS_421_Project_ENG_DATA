@@ -41,7 +41,11 @@ jobs:
       - name: Zip Mac App
         if: matrix.os == 'macos-14'
         run: |
-          cd code/TestApp/dist
+          cd code/TestApp/dist/FERPA_Redactor.app/Contents/MacOS
+          
+          chmod +x FERPA_Redactor
+          
+          cd ../../../
           zip -r ../../../FERPA_Redactor_Mac.zip FERPA_Redactor.app
         shell: bash
 
