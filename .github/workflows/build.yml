@@ -1,30 +1,29 @@
 name: Build Executables
 on: [push]
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false  # Prevents Windows failing from canceling the Mac build
       matrix:
-        os: [windows-latest, macos-latest]
+        # Use macos-14 to ensure it's on an ARM/M1 runner with Node 24 support
+        os: [windows-latest, macos-14] 
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 # v4 is Node 24 compatible
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5 # v5 is Node 24 compatible
         with:
           python-version: '3.10'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl
+          pip install pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl numpy
 
       - name: Build with PyInstaller
         run: |
@@ -36,24 +35,17 @@ jobs:
           app.py
         working-directory: ./code/TestApp
 
-      # Only zip on Mac to preserve the .app folder structure and permissions
       - name: Zip Mac App
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-14'
         run: |
           cd code/TestApp/dist
           zip -r ../../../FERPA_Redactor_Mac.zip FERPA_Redactor.app
         shell: bash
 
-      - name: Upload Windows Artifact
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4 # v4 is the newest stable version
         with:
-          name: FERPA-Tool-Windows
-          path: code/TestApp/dist/*.exe
-
-      - name: Upload Mac Artifact
-        if: matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: FERPA-Tool-MacOS
-          path: FERPA_Redactor_Mac.zip
+          name: FERPA-Tool-${{ matrix.os }}
+          path: |
+            code/TestApp/dist/*.exe
+            FERPA_Redactor_Mac.zip
