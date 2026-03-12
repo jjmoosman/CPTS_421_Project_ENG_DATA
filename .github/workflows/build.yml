@@ -1,0 +1,56 @@
+name: Build Executables
+on: [push]
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --onefile --windowed \
+          --name "FERPA_Redactor" \
+          --collect-all pandas \
+          --collect-all numpy \
+          --collect-all rapidfuzz \
+          app.py
+        working-directory: ./code/TestApp
+
+      # Only zip on Mac to preserve the .app folder structure and permissions
+      - name: Zip Mac App
+        if: matrix.os == 'macos-latest'
+        run: |
+          cd code/TestApp/dist
+          zip -r ../../../FERPA_Redactor_Mac.zip FERPA_Redactor.app
+        shell: bash
+
+      - name: Upload Windows Artifact
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FERPA-Tool-Windows
+          path: code/TestApp/dist/*.exe
+
+      - name: Upload Mac Artifact
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FERPA-Tool-MacOS
+          path: FERPA_Redactor_Mac.zip
