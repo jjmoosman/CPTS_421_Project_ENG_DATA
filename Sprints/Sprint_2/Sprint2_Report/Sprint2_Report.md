@@ -1,6 +1,6 @@
 # Sprint 2 Report (2/22-3/24)
 
-## YouTube link of Sprint:
+## YouTube link of Sprint: https://www.youtube.com/watch?v=y6Lt1mpbNbw
 
 ## What's New (User Facing)
  * Solutions Approach
