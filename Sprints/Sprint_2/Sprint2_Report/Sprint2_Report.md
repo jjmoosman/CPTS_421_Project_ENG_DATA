@@ -25,8 +25,10 @@ Here are links to the issues that we completed in this sprint:
  
  ## Incomplete Issues/User Stories
  Here are links to issues we worked on but did not complete in this sprint:
- * [Censoring Edge Cases](https://github.com/jjmoosman/CPTS_421_Project_ENG_DATA/issues/1) <<There were too many edge cases and trying to fix them became difficult without becoming too generous with censoring things that was not meant to be censored>>
- * [MacOS Compatability](https://github.com/jjmoosman/CPTS_421_Project_ENG_DATA/issues/4) <<Each time we created an app file for MacOS it would not work on other Macs even if it ran fine during our testing>> 
+ * [Censoring Edge Cases](https://github.com/jjmoosman/CPTS_421_Project_ENG_DATA/issues/1)
+   There were too many edge cases and trying to fix them became difficult without becoming too generous with censoring things that was not meant to be censored
+ * [MacOS Compatability](https://github.com/jjmoosman/CPTS_421_Project_ENG_DATA/issues/4)
+   Each time we created an app file for MacOS it would not work on other Macs even if it ran fine during our testing
 
 ## Code Files for Review
 Please review the following code files, which were actively developed during this sprint, for quality:
