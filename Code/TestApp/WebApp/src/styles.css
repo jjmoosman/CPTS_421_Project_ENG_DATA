@@ -1,0 +1,158 @@
+:root {
+  --bg: #f4f8fb;
+  --panel: #ffffff;
+  --text: #1f2937;
+  --accent: #1d4ed8;
+  --accent-soft: #dbeafe;
+  --danger: #dc2626;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app-shell {
+  width: min(1200px, 95vw);
+  margin: 20px auto;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: clamp(1.4rem, 2vw, 2rem);
+}
+
+.grid-two {
+  display: grid;
+  grid-template-columns: minmax(270px, 1fr) minmax(290px, 1fr);
+  gap: 16px;
+}
+
+.panel {
+  background: var(--panel);
+  border-radius: 10px;
+  border: 1px solid #d2d6db;
+  padding: 14px;
+  box-shadow: 0 4px 12px rgba(30, 41, 59, 0.07);
+}
+
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 1.05rem;
+}
+
+.label {
+  display: block;
+  margin: 8px 0 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.input,
+textarea,
+select {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #c5cbd6;
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+  background: #ffffff;
+}
+
+textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.btn {
+  background: var(--accent);
+  color: white;
+  border: 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.table-wrapper {
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+thead {
+  background: #f1f5f9;
+}
+
+th, td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.chart-bar {
+  height: 22px;
+  border-radius: 6px;
+  margin: 6px 0;
+  color: #0f172a;
+  font-size: 0.8rem;
+  line-height: 22px;
+  padding-left: 8px;
+}
+
+.status {
+  font-size: 0.85rem;
+  color: #475569;
+  margin-bottom: 5px;
+}
+
+.tag {
+  display: inline-block;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid #93c5fd;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 0.8rem;
+  margin-right: 5px;
+  margin-bottom: 5px;
+}
+
+.annotation-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.annotation-row input {
+  flex: 1;
+}
+
+.annotation-row button {
+  background: var(--danger);
+}
