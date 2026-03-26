@@ -9,26 +9,35 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-14]
+        # Using 'latest' keeps your project modern and forward-compatible
+        os: [windows-latest, macos-latest]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python (Windows)
+        if: matrix.os == 'windows-latest'
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          # Removed 'architecture: x64' to let the runner use its native stable version
+
+      - name: Set up Python (Mac - Hybrid Fix)
+        if: matrix.os == 'macos-latest'
+        run: |
+          # We use Homebrew to get a 'clean' Python 3.10 that works on ARM64 runners
+          brew install python@3.10
+          echo "/opt/homebrew/opt/python@3.10/bin" >> $GITHUB_PATH
+          # Link it so 'python' and 'pip' commands point to 3.10
+          brew link --overwrite python@3.10
 
       - name: Install dependencies
         shell: bash
         run: |
-          python -m pip install --upgrade pip
+          python3 -m pip install --upgrade pip
           if [ "$RUNNER_OS" == "macOS" ]; then
             brew install create-dmg
-            # We install the standard packages, but PyInstaller will handle the heavy lifting
-            pip install pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl numpy
+            pip3 install pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl numpy
           else
             pip install pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl numpy
           fi
@@ -38,8 +47,8 @@ jobs:
         working-directory: ./code/TestApp
         run: |
           if [ "$RUNNER_OS" == "macOS" ]; then
-            # Use the 'universal2' target to ensure it runs on Intel VMs and M-series Macs
             export MACOSX_DEPLOYMENT_TARGET=11.0
+            # Universal2 ensures the output works on BOTH Intel and M-series
             pyinstaller --onefile --windowed \
             --name "FERPA_Redactor" \
             --target-arch universal2 \
@@ -59,17 +68,13 @@ jobs:
           fi
 
       - name: Create macOS DMG
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-latest'
         shell: bash
         run: |
           mkdir -p dmg_root
-          # Copy the .app bundle created by PyInstaller
           cp -r code/TestApp/dist/FERPA_Redactor.app dmg_root/
-          
-          # Fix permissions inside the bundle
           chmod +x "dmg_root/FERPA_Redactor.app/Contents/MacOS/FERPA_Redactor"
           
-          # Create the professional installer
           create-dmg \
             --volname "FERPA Redactor Installer" \
             --window-pos 200 120 \
@@ -89,7 +94,7 @@ jobs:
           path: code/TestApp/dist/*.exe
 
       - name: Upload Mac Artifact
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: FERPA-Tool-MacOS-Installer
