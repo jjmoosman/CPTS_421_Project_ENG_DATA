@@ -19,21 +19,17 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          # Ensures universal2 compatibility for Mac builds
-          architecture: x64
+          # Removed 'architecture: x64' to let the runner use its native stable version
 
       - name: Install dependencies
         shell: bash
         run: |
           python -m pip install --upgrade pip
           if [ "$RUNNER_OS" == "macOS" ]; then
-            # Install create-dmg for the professional installer
             brew install create-dmg
-            # Force universal2 wheels for core libraries
-            pip install --upgrade --only-binary :all: --platform macos_11_0_universal2 \
-            pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl numpy
+            # We install the standard packages, but PyInstaller will handle the heavy lifting
+            pip install pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl numpy
           else
-            # Standard install for Windows
             pip install pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl numpy
           fi
 
@@ -42,7 +38,7 @@ jobs:
         working-directory: ./code/TestApp
         run: |
           if [ "$RUNNER_OS" == "macOS" ]; then
-            # Build for both Intel and Apple Silicon with compatibility back to Big Sur
+            # Use the 'universal2' target to ensure it runs on Intel VMs and M-series Macs
             export MACOSX_DEPLOYMENT_TARGET=11.0
             pyinstaller --onefile --windowed \
             --name "FERPA_Redactor" \
@@ -53,7 +49,6 @@ jobs:
             --hidden-import=PyQt6.sip \
             app.py
           else
-            # Windows standard build
             pyinstaller --onefile --windowed \
             --name "FERPA_Redactor" \
             --collect-all pandas \
@@ -67,14 +62,14 @@ jobs:
         if: matrix.os == 'macos-14'
         shell: bash
         run: |
-          # Setup a temporary directory for the DMG source
           mkdir -p dmg_root
+          # Copy the .app bundle created by PyInstaller
           cp -r code/TestApp/dist/FERPA_Redactor.app dmg_root/
           
-          # Ensure the binary is executable within the bundle
+          # Fix permissions inside the bundle
           chmod +x "dmg_root/FERPA_Redactor.app/Contents/MacOS/FERPA_Redactor"
           
-          # Generate the Disk Image
+          # Create the professional installer
           create-dmg \
             --volname "FERPA Redactor Installer" \
             --window-pos 200 120 \
