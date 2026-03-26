@@ -40,14 +40,16 @@ jobs:
       # Preserve Mac permissions by zipping the .app bundle
       - name: Zip Mac App
         if: matrix.os == 'macos-14'
-        run: |
-          cd code/TestApp/dist/FERPA_Redactor.app/Contents/MacOS
-          
-          chmod +x FERPA_Redactor
-          
-          cd ../../../
-          zip -r ../../../FERPA_Redactor_Mac.zip FERPA_Redactor.app
         shell: bash
+        run: |
+          # Move to the distribution directory
+          cd code/TestApp/dist
+          
+          # Ensure the actual binary inside the bundle is executable
+          chmod +x "FERPA_Redactor.app/Contents/MacOS/FERPA_Redactor"
+          
+          # Zip the bundle itself, not just the contents
+          zip -r ../../../FERPA_Redactor_Mac.zip "FERPA_Redactor.app"
 
       - name: Upload Windows Artifact
         if: matrix.os == 'windows-latest'
