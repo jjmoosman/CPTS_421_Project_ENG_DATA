@@ -1,11 +1,15 @@
 name: Build Executables
 
-on: [push]
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+
     strategy:
       fail-fast: false
       matrix:
@@ -15,57 +19,59 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python (Windows)
-        if: matrix.os == 'windows-latest'
+      # ✅ Unified Python setup (works on BOTH OS)
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Set up Python (Mac - Hybrid Fix)
-        if: matrix.os == 'macos-latest'
+      # ✅ Create virtual environment (cross-platform)
+      - name: Create virtual environment
+        shell: bash
         run: |
-          brew install python@3.10
-          echo "/opt/homebrew/opt/python@3.10/bin" >> $GITHUB_PATH
-          brew link --overwrite python@3.10
+          python -m venv venv
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            source venv/Scripts/activate
+          else
+            source venv/bin/activate
+          fi
+          python -m pip install --upgrade pip
 
+      # ✅ Install dependencies
       - name: Install dependencies
         shell: bash
         run: |
-          if [ "$RUNNER_OS" == "macOS" ]; then
-            brew install create-dmg
-            # Use --break-system-packages to bypass PEP 668 on the runner
-            python3 -m pip install --upgrade pip --break-system-packages
-            python3 -m pip install pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl numpy --break-system-packages
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            source venv/Scripts/activate
           else
-            python -m pip install --upgrade pip
-            pip install pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl numpy
+            source venv/bin/activate
+            brew install create-dmg
           fi
 
+          pip install pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl numpy
+
+      # ✅ Build with PyInstaller
       - name: Build with PyInstaller
         shell: bash
         working-directory: ./code/TestApp
         run: |
-          if [ "$RUNNER_OS" == "macOS" ]; then
-            export MACOSX_DEPLOYMENT_TARGET=11.0
-            # Target universal2 to support your Intel VM and M-series Macs
-            pyinstaller --onefile --windowed \
-            --name "FERPA_Redactor" \
-            --target-arch universal2 \
-            --collect-all pandas \
-            --collect-all numpy \
-            --collect-all rapidfuzz \
-            --hidden-import=PyQt6.sip \
-            app.py
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            source ../../venv/Scripts/activate
           else
-            pyinstaller --onefile --windowed \
-            --name "FERPA_Redactor" \
-            --collect-all pandas \
-            --collect-all numpy \
-            --collect-all rapidfuzz \
-            --hidden-import=PyQt6.sip \
-            app.py
+            source ../../venv/bin/activate
+            export MACOSX_DEPLOYMENT_TARGET=11.0
           fi
 
+          pyinstaller --onefile --windowed \
+            --name "FERPA_Redactor" \
+            --collect-all pandas \
+            --collect-all numpy \
+            --collect-all rapidfuzz \
+            --collect-all PyQt6 \
+            --hidden-import=PyQt6.sip \
+            app.py
+
+      # ✅ Create macOS DMG
       - name: Create macOS DMG
         if: matrix.os == 'macos-latest'
         shell: bash
@@ -73,7 +79,7 @@ jobs:
           mkdir -p dmg_root
           cp -r code/TestApp/dist/FERPA_Redactor.app dmg_root/
           chmod +x "dmg_root/FERPA_Redactor.app/Contents/MacOS/FERPA_Redactor"
-          
+
           create-dmg \
             --volname "FERPA Redactor Installer" \
             --window-pos 200 120 \
@@ -85,6 +91,7 @@ jobs:
             "FERPA_Redactor_Mac.dmg" \
             "dmg_root/"
 
+      # ✅ Upload Windows artifact
       - name: Upload Windows Artifact
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
@@ -92,6 +99,7 @@ jobs:
           name: FERPA-Tool-Windows
           path: code/TestApp/dist/*.exe
 
+      # ✅ Upload macOS artifact
       - name: Upload Mac Artifact
         if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
