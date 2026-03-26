@@ -1,4 +1,5 @@
 name: Build Executables
+
 on: [push]
 
 jobs:
@@ -6,9 +7,9 @@ jobs:
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false 
+      fail-fast: false
       matrix:
-        os: [windows-latest, macos-14] 
+        os: [windows-latest, macos-14]
 
     steps:
       - name: Checkout code
@@ -18,38 +19,72 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          # Ensures universal2 compatibility for Mac builds
+          architecture: x64
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl numpy
-
-      - name: Build with PyInstaller
-        # shell: bash makes path handling consistent across Win and Mac
         shell: bash
         run: |
-          pyinstaller --onefile --windowed \
-          --name "FERPA_Redactor" \
-          --collect-all pandas \
-          --collect-all numpy \
-          --collect-all rapidfuzz \
-          --hidden-import=PyQt6.sip \
-          app.py
-        working-directory: ./code/TestApp
+          python -m pip install --upgrade pip
+          if [ "$RUNNER_OS" == "macOS" ]; then
+            # Install create-dmg for the professional installer
+            brew install create-dmg
+            # Force universal2 wheels for core libraries
+            pip install --upgrade --only-binary :all: --platform macos_11_0_universal2 \
+            pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl numpy
+          else
+            # Standard install for Windows
+            pip install pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl numpy
+          fi
 
-      # Preserve Mac permissions by zipping the .app bundle
-      - name: Zip Mac App
+      - name: Build with PyInstaller
+        shell: bash
+        working-directory: ./code/TestApp
+        run: |
+          if [ "$RUNNER_OS" == "macOS" ]; then
+            # Build for both Intel and Apple Silicon with compatibility back to Big Sur
+            export MACOSX_DEPLOYMENT_TARGET=11.0
+            pyinstaller --onefile --windowed \
+            --name "FERPA_Redactor" \
+            --target-arch universal2 \
+            --collect-all pandas \
+            --collect-all numpy \
+            --collect-all rapidfuzz \
+            --hidden-import=PyQt6.sip \
+            app.py
+          else
+            # Windows standard build
+            pyinstaller --onefile --windowed \
+            --name "FERPA_Redactor" \
+            --collect-all pandas \
+            --collect-all numpy \
+            --collect-all rapidfuzz \
+            --hidden-import=PyQt6.sip \
+            app.py
+          fi
+
+      - name: Create macOS DMG
         if: matrix.os == 'macos-14'
         shell: bash
         run: |
-          # Move to the distribution directory
-          cd code/TestApp/dist
+          # Setup a temporary directory for the DMG source
+          mkdir -p dmg_root
+          cp -r code/TestApp/dist/FERPA_Redactor.app dmg_root/
           
-          # Ensure the actual binary inside the bundle is executable
-          chmod +x "FERPA_Redactor.app/Contents/MacOS/FERPA_Redactor"
+          # Ensure the binary is executable within the bundle
+          chmod +x "dmg_root/FERPA_Redactor.app/Contents/MacOS/FERPA_Redactor"
           
-          # Zip the bundle itself, not just the contents
-          zip -r ../../../FERPA_Redactor_Mac.zip "FERPA_Redactor.app"
+          # Generate the Disk Image
+          create-dmg \
+            --volname "FERPA Redactor Installer" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "FERPA_Redactor.app" 175 190 \
+            --hide-extension "FERPA_Redactor.app" \
+            --app-drop-link 425 190 \
+            "FERPA_Redactor_Mac.dmg" \
+            "dmg_root/"
 
       - name: Upload Windows Artifact
         if: matrix.os == 'windows-latest'
@@ -62,5 +97,5 @@ jobs:
         if: matrix.os == 'macos-14'
         uses: actions/upload-artifact@v4
         with:
-          name: FERPA-Tool-MacOS
-          path: FERPA_Redactor_Mac.zip
+          name: FERPA-Tool-MacOS-Installer
+          path: FERPA_Redactor_Mac.dmg
