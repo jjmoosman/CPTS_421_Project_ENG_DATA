@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Project Dashboard</title>
+  <style>
+    :root {
+      --bg: #f5f8fc;
+      --primary: #1f6feb;
+      --text: #172a4f;
+      --card: #ffffff;
+      --card-border: #dbe1f5;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      background: #0f324f;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #1a3a6d;
+      box-shadow: 2px 0 12px rgba(0,0,0,0.12);
+    }
+
+    .brand {
+      padding: 22px 20px;
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      border-bottom: 1px solid rgba(255,255,255,0.15);
+      text-transform: uppercase;
+      background: linear-gradient(140deg, #1e4a79, #11335e);
+    }
+
+    .nav-links {
+      list-style: none;
+      margin: 0;
+      padding: 8px 0;
+      width: 100%;
+    }
+
+    .nav-links li {
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .nav-links button {
+      width: 100%;
+      padding: 14px 20px;
+      color: #d7e7ff;
+      background: transparent;
+      border: 0;
+      text-align: left;
+      font-size: 0.98rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    .nav-links button:hover,
+    .nav-links .active {
+      background: rgba(255,255,255,0.08);
+      color: #fff;
+    }
+
+    .nav-links button:focus { outline: none; }
+
+    .main {
+      padding: 24px;
+      background: var(--bg);
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 2rem;
+      letter-spacing: 0.2px;
+      color: var(--text);
+    }
+
+    .header p {
+      margin: 6px 0 18px;
+      color: #4f6184;
+    }
+
+    .cards {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+
+    .card {
+      position: relative;
+      background: #fff;
+      border: 0;
+      border-radius: 12px;
+      padding: 0;
+      overflow: hidden;
+      box-shadow: 0 0 22px rgba(20,49,105,0.08);
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 35px rgba(20,49,105,0.20);
+    }
+
+    .card .card-top {
+      height: 120px;
+      background: linear-gradient(120deg, #b67d02, #b22f2f);
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 16px;
+      color: #fff;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 1.16rem;
+      font-weight: 700;
+    }
+
+    .card-content {
+      padding: 16px;
+      background: #fff;
+    }
+
+    .card-text {
+      margin: 0 0 12px;
+      color: #4b5f7f;
+      line-height: 1.45;
+    }
+
+    .card button {
+      border: 0;
+      background: #1f6feb;
+      color: #fff;
+      font-weight: 600;
+      border-radius: 8px;
+      padding: 10px 14px;
+      cursor: pointer;
+      letter-spacing: 0.4px;
+    }
+
+    .card button:hover { background: #1558b7; }
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 1px 6px rgba(20,49,105,0.08);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 3px 12px rgba(20,49,105,0.15);
+    }
+
+    .card-title {
+      margin: 0 0 10px;
+      font-size: 1.15rem;
+      color: #0f2f66;
+    }
+
+    .card-text {
+      margin: 0 0 14px;
+      color: #4b5f7f;
+      line-height: 1.4;
+    }
+
+    .card button {
+      border: 1px solid #1f6feb;
+      background: #1f6feb;
+      color: #fff;
+      font-weight: 600;
+      border-radius: 6px;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+
+    .card button:hover { background: #1558b7; }
+
+    .hidden { display: none; }
+
+    .tool-status {
+      margin-top: 20px;
+      font-size: 0.95rem;
+      padding: 12px;
+      border-radius: 10px;
+      background: #e6f0ff;
+      border: 1px solid #aac5ff;
+      color: #1755c3;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">Wsu Dashboard</div>
+      <ul class="nav-links">
+        <li><button class="active" data-view="dashboard">🏠 Dashboard</button></li>
+        <li><button data-view="courses">📚 Courses</button></li>
+        <li><button data-view="calendar">🗓️ Calendar</button></li>
+      </ul>
+    </aside>
+
+    <main class="main">
+      <section class="header" id="dashboard-view">
+        <h1>Dashboard</h1>
+        <p>Select a tool card to view or launch the feature quickly.</p>
+
+        <div class="cards">
+          <article class="card">
+            <div class="card-top" style="background: linear-gradient(135deg, #8c0a0a, #cc3d3d);">
+              <h2 class="card-title">Concordance</h2>
+            </div>
+            <div class="card-content">
+              <p class="card-text">Analyze text documents to find word occurrences in context.</p>
+              <a class="button" href="Tool1.html" style="text-decoration:none; display:inline-block;">Open Concordance</a>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-top" style="background: linear-gradient(135deg, #ae3600, #f2a43b);">
+              <h2 class="card-title">Keyword</h2>
+            </div>
+            <div class="card-content">
+              <p class="card-text">Extract and rank keywords from multiple texts by frequency.</p>
+              <a class="button" href="Tool2.html" style="text-decoration:none; display:inline-block;">Open Keyword</a>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-top" style="background: linear-gradient(135deg, #1d6f78, #2a9d95);">
+              <h2 class="card-title">Wordcloud</h2>
+            </div>
+            <div class="card-content">
+              <p class="card-text">Create a visual word cloud based on word frequency.</p>
+              <a class="button" href="Tool3.html" style="text-decoration:none; display:inline-block;">Open Wordcloud</a>
+            </div>
+          </article>
+        </div>
+
+        <div class="tool-status" id="tool-status">Select a tool to open its page.</div>
+      </section>
+
+      <section id="courses-view" class="hidden">
+        <h1>Courses</h1>
+        <p>Manage your course list and settings here.</p>
+      </section>
+
+      <section id="calendar-view" class="hidden">
+        <h1>Calendar</h1>
+        <p>View events, deadlines, and schedule in the calendar.</p>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const navButtons = document.querySelectorAll('.nav-links button');
+    const views = {
+      dashboard: document.getElementById('dashboard-view'),
+      courses: document.getElementById('courses-view'),
+      calendar: document.getElementById('calendar-view')
+    };
+
+    navButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        navButtons.forEach(x => x.classList.remove('active'));
+        btn.classList.add('active');
+
+        Object.values(views).forEach(v => v.classList.add('hidden'));
+        const view = btn.dataset.view;
+        views[view].classList.remove('hidden');
+      });
+    });
+
+    // The tool link buttons now navigate to separate pages: Tool1.html, Tool2.html, Tool3.html.
+  </script>
+</body>
+</html>
