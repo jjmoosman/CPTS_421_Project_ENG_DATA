@@ -4,11 +4,26 @@ import pandas as pd
 from pathlib import Path
 from rapidfuzz import fuzz
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, 
-                             QWidget, QTextEdit, QLineEdit, QFileDialog, QLabel, QProgressBar, QMessageBox)
+                             QWidget, QTextEdit, QLineEdit, QFileDialog, QLabel, 
+                             QProgressBar, QMessageBox)
 from docx import Document
 import fitz  # PyMuPDF
 
+
+# A decorator that catches any exceptions in the decorated function and shows an error message box.
+# This prevents the app from crashing and informs the user of problems.
+def safe_slot(fn):
+    def wrapper(self, *args, **kwargs):
+        try:
+            return fn(self, *args, **kwargs)
+        except Exception as exc:
+            QMessageBox.critical(self, "Application Error", f"Unexpected error: {exc}")
+            return None
+    return wrapper
+
 class RedactorApp(QMainWindow):
+    # Initializes the main application window, sets the title and size, and calls initUI to build the interface.
+    # Also sets up empty lists and variables for storing user data.
     def __init__(self):
         super().__init__()
         self.setWindowTitle("FERPA Compliance Tool")
@@ -19,41 +34,49 @@ class RedactorApp(QMainWindow):
         self.output_dir = None
         self.temp_output_dir = None
 
+    # Builds the user interface by creating buttons, text boxes, labels, and layouts.
+    # Arranges everything in a vertical layout for the main window.
     def initUI(self):
         layout = QVBoxLayout()
 
-        # step 1: input names/ids
-        layout.addWidget(QLabel("<b>Step 1: Input Names/IDs to Remove</b>"))
+        # Step 1: Input names and IDs
+        layout.addWidget(QLabel("<b>Step 1: Input Names and IDs to Remove</b>"))
+        
+        name_layout = QVBoxLayout()
+        name_layout.addWidget(QLabel("Student Names:"))
         self.name_input = QTextEdit()
-        layout.addWidget(self.name_input)
+        name_layout.addWidget(self.name_input)
+        layout.addLayout(name_layout)
+        
+        id_layout = QVBoxLayout()
+        id_layout.addWidget(QLabel("Student IDs:"))
+        self.id_input = QTextEdit()
+        id_layout.addWidget(self.id_input)
+        layout.addLayout(id_layout)
         
         btn_excel = QPushButton("📁 Load from Excel")
         btn_excel.clicked.connect(self.load_excel)
         layout.addWidget(btn_excel)
 
-        # step 2: custom file naming
+        # Step 2: Custom file naming
         layout.addWidget(QLabel("<br><b>Step 2: Custom File Naming (Optional)</b>"))
         self.prefix_input = QLineEdit()
         self.prefix_input.setPlaceholderText("Enter file prefix (e.g. Class_Semester)")
         layout.addWidget(self.prefix_input)
 
-        # Step 3: select files
+        # Step 3: Select files
         layout.addWidget(QLabel("<br><b>Step 3: Select Student Files</b>"))
-
         file_btn_layout = QVBoxLayout()
 
-        # individual file selection
         btn_files = QPushButton("📄 Select Individual Files")
         btn_files.clicked.connect(self.select_files)
         file_btn_layout.addWidget(btn_files)
 
-        # folder selection (all .docx/.pdf in folder)
         btn_folder = QPushButton("📂 Select Folder (All .docx/.pdf)")
         btn_folder.clicked.connect(self.select_folder)
         file_btn_layout.addWidget(btn_folder)
         layout.addLayout(file_btn_layout)
 
-        # Clear button to reset selection
         btn_clear = QPushButton("🗑️ Clear Selection")
         btn_clear.clicked.connect(self.clear_selection)
         btn_clear.setStyleSheet("color: #d32f2f; font-size: 11px; border: 1px solid #d32f2f;")
@@ -62,16 +85,16 @@ class RedactorApp(QMainWindow):
         self.file_list_label = QLabel("No files selected")
         layout.addWidget(self.file_list_label)
 
-        # Step 4: select destination
+        # Step 4: Select destination
         layout.addWidget(QLabel("<br><b>Step 4: Select Destination Folder</b>"))
-        btn_files = QPushButton("Select Destination")
-        btn_files.clicked.connect(self.select_destination)
-        layout.addWidget(btn_files)
+        btn_dest = QPushButton("Select Destination")
+        btn_dest.clicked.connect(self.select_destination)
+        layout.addWidget(btn_dest)
 
         self.selected_destination_label = QLabel("No destination selected")
         layout.addWidget(self.selected_destination_label)
 
-        # de-identify button
+        # De-identify button
         self.process_btn = QPushButton("🚀 DE-IDENTIFY")
         self.process_btn.clicked.connect(self.run_redaction)
         self.process_btn.setStyleSheet("background-color: #2E7D32; color: white; font-weight: bold; height: 40px;")
@@ -84,24 +107,90 @@ class RedactorApp(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-    def load_excel(self):
+    # Opens a file dialog for the user to select an Excel file (.xlsx or .xls).
+    # Reads the file, determines which columns contain names and IDs based on headers,
+    # and populates the name and ID text boxes with the data.
+    @safe_slot
+    def load_excel(self, *args, **kwargs):
         file_path, _ = QFileDialog.getOpenFileName(self, "Open Excel", "", "Excel Files (*.xlsx *.xls)")
         if file_path:
-            df = pd.read_excel(file_path)
-            items = df.values.flatten().astype(str)
-            self.name_input.append("\n".join([i.strip() for i in items if i.lower() != 'nan']))
+            path = Path(file_path)
+            if not path.exists():
+                QMessageBox.critical(self, "Excel Error", "Selected file does not exist.")
+                return
 
-    def select_files(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "Select Files", "", "Documents (*.docx *.pdf)")
+            try:
+                if path.suffix.lower() == ".xlsx":
+                    df = pd.read_excel(path, engine="openpyxl")
+                elif path.suffix.lower() == ".xls":
+                    try:
+                        df = pd.read_excel(path, engine="xlrd")
+                    except ImportError:
+                        QMessageBox.critical(self, "Excel Error", "To open .xls files install xlrd or use .xlsx files.")
+                        return
+                else:
+                    raise ValueError("Unsupported Excel file type.")
+
+                if df.empty:
+                    QMessageBox.warning(self, "Excel Warning", "No data found in the selected Excel file.")
+                    return
+
+                # Determine columns for names and IDs
+                headers = [str(col).lower() for col in df.columns]
+                name_col = None
+                id_col = None
+                for i, header in enumerate(headers):
+                    if 'name' in header:
+                        name_col = i
+                    elif 'id' in header:
+                        id_col = i
+
+                if name_col is None and len(df.columns) > 0:
+                    name_col = 0  # Assume first column is names
+                if id_col is None and len(df.columns) > 1:
+                    id_col = 1  # Assume second column is IDs
+
+                names = []
+                ids = []
+
+                for _, row in df.iterrows():
+                    if name_col is not None:
+                        name_val = str(row.iloc[name_col]).strip()
+                        if name_val.lower() != 'nan' and name_val:
+                            names.append(name_val)
+                    if id_col is not None:
+                        id_val = str(row.iloc[id_col]).strip()
+                        if id_val.lower() != 'nan' and id_val:
+                            ids.append(id_val)
+
+                if names:
+                    self.name_input.append("\n".join(names))
+                if ids:
+                    self.id_input.append("\n".join(ids))
+
+                if not names and not ids:
+                    QMessageBox.warning(self, "Excel Warning", "No valid data found in the selected Excel file.")
+            except ImportError as e:
+                QMessageBox.critical(self, "Excel Error", f"Missing package for Excel support: {e}")
+            except Exception as e:
+                QMessageBox.critical(self, "Excel Error", f"Failed to load Excel: {e}")
+
+    # Opens a file dialog for the user to select individual .docx or .pdf files.
+    # Adds the selected files to the list of files to process.
+    @safe_slot
+    def select_files(self, *args, **kwargs):
+        files, _ = QFileDialog.getOpenFileNames(self, "Select Files", "", "Documents (*.docx *.pdf);;Word Documents (*.docx);;PDF Files (*.pdf)")
         if files:
             self.add_to_selected_files(files)
 
-    def select_folder(self):
+    # Opens a folder dialog for the user to select a directory.
+    # Finds all .docx and .pdf files in that folder and adds them to the list.
+    @safe_slot
+    def select_folder(self, *args, **kwargs):
         folder_path = QFileDialog.getExistingDirectory(self, "Select Folder of Student Writings")
         if folder_path:
             folder = Path(folder_path)
             found_files = []
-            # Searching for common extensions
             for ext in ["*.pdf", "*.docx", "*.PDF", "*.DOCX"]:
                 found_files.extend([str(f) for f in folder.glob(ext)])
             
@@ -110,355 +199,232 @@ class RedactorApp(QMainWindow):
             else:
                 QMessageBox.warning(self, "No Files Found", "No PDF or DOCX files found in that folder.")
 
+    # Adds new files to the selected files list without duplicates.
+    # Updates the label showing the count and sets a default output directory if needed.
     def add_to_selected_files(self, new_files):
-        """Merges new selections with existing ones and prevents duplicates."""
         combined = set(self.selected_files) | set(new_files)
         self.selected_files = list(combined)
         self.file_list_label.setText(f"Total files selected: {len(self.selected_files)}")
         
         if not self.output_dir and self.selected_files:
             self.temp_output_dir = Path(self.selected_files[0]).parent / "Redacted_Output"
-            self.selected_destination_label.setText(f"Default Destination: {self.temp_output_dir}")
+            self.selected_destination_label.setText(f"Default: {self.temp_output_dir}")
 
+    # Clears the list of selected files and resets the label.
     def clear_selection(self):
         self.selected_files = []
         self.file_list_label.setText("No files selected")
         
-    def select_destination(self):
+    # Opens a folder dialog for the user to choose where to save the redacted files.
+    # Sets the output directory for saving results.
+    @safe_slot
+    def select_destination(self, *args, **kwargs):
         folder_path = QFileDialog.getExistingDirectory(self, "Select Destination Folder")
         if folder_path:
-            self.output_dir = Path(folder_path) / "Redacted_Output" # make additional folder automatically?
-            self.selected_destination_label.setText(f"Destination selected: {self.output_dir}")
+            selected_folder = Path(folder_path)
+            self.output_dir = selected_folder / "Redacted_Output"
+            self.selected_destination_label.setText(f"Destination: {self.output_dir}")
 
-    def run_redaction(self):
-        raw_text = self.name_input.toPlainText().split('\n')
-        self.blacklisted_terms = {t.strip() for t in raw_text if len(t.strip()) > 1}
+    # Starts the redaction process: collects names and IDs from text boxes,
+    # checks for selected files, creates output directory, and processes each file.
+    # Shows progress and a completion message.
+    @safe_slot
+    def run_redaction(self, *args, **kwargs):
+        raw_names = self.name_input.toPlainText().split('\n')
+        raw_ids = self.id_input.toPlainText().split('\n')
+        self.blacklisted_terms = {t.strip() for t in raw_names + raw_ids if len(t.strip()) > 1}
         
+        self.selected_files = [f for f in self.selected_files if Path(f).exists()]
         if not self.selected_files or not self.blacklisted_terms:
-            QMessageBox.warning(self, "Missing Data", "Need files and names!")
+            QMessageBox.warning(self, "Missing Data", "Need files and names/IDs! Make sure selected files still exist.")
             return
         
-        # Determine prefix
+        # Determine final output path
+        final_output = self.output_dir if self.output_dir else self.temp_output_dir
+        if not final_output:
+            QMessageBox.critical(self, "Error", "No output directory determined.")
+            return
+
+        try:
+            final_output.mkdir(exist_ok=True, parents=True)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not create directory: {e}")
+            return
+
         custom_prefix = self.prefix_input.text().strip()
         file_prefix = custom_prefix if custom_prefix else "Student"
-
-        if (self.output_dir == None):
-            self.output_dir = self.temp_output_dir
-        self.output_dir.mkdir(exist_ok=True)
         
         self.progress.setMaximum(len(self.selected_files))
+        self.progress.setValue(0)
 
         for i, f_path in enumerate(self.selected_files):
-            file_path = Path(f_path)
-            # Rename file to Student_X to hide identity in title
-            out_path = self.output_dir / f"{file_prefix}_{i+1}{file_path.suffix}"
-            
-            if file_path.suffix.lower() == ".docx":
-                self.redact_docx(file_path, out_path)
-            elif file_path.suffix.lower() == ".pdf":
-                self.redact_pdf(file_path, out_path)
+            try:
+                file_path = Path(f_path)
+                out_path = final_output / f"{file_prefix}_{i+1}.txt"
+
+                if file_path.suffix.lower() == ".docx":
+                    self.redact_docx_to_txt(file_path, out_path)
+                elif file_path.suffix.lower() == ".pdf":
+                    self.redact_pdf_to_txt(file_path, out_path)
+                else:
+                    raise ValueError(f"Unsupported file type: {file_path.suffix}")
+            except Exception as e:
+                QMessageBox.warning(self, "Processing Error", f"Could not process {f_path}: {e}")
             
             self.progress.setValue(i + 1)
         
-        QMessageBox.information(self, "Finished", f"Saved to: {self.output_dir}")
+        QMessageBox.information(self, "Finished", f"Saved to: {final_output}")
 
-    def normalize_text(self, text):
-        text = text.replace("\n", " ")
-        text = re.sub(r"[._-]", " ", text)
-        text = re.sub(r"\s+", " ", text)
-        
-        return text.strip()
-
+    # Replaces occurrences of a term in the text with [REDACTED], using fuzzy matching for similarity.
+    # Handles single words or full names by looking for matches in the text.
     def fuzzy_replace(self, text, term, threshold=80):
-        """Simplified fuzzy replacement that handles all test cases"""
-        name_parts = term.lower().split()
-        if len(name_parts) < 2:
+        term_lower = term.lower().strip()
+        if not term_lower:
             return text
-    
-        first = name_parts[0]
-        last = name_parts[-1]
-        first_initial = first[0]
-    
-        # Split text into words with positions
-        words = list(re.finditer(r'\b\w+\b', text))
+
         redacted_text = text
-        redaction_positions = []
-    
-        i = 0
-        while i < len(words):
+        words = list(re.finditer(r'\b[\w-]+\b', text))
+
+        if len(term_lower.split()) == 1:
+            for i in range(len(words) - 1, -1, -1):
+                word_match = words[i]
+                word_clean = re.sub(r'[^a-zA-Z0-9]', '', word_match.group()).lower()
+                if word_clean and fuzz.ratio(word_clean, term_lower) >= threshold:
+                    redacted_text = redacted_text[:word_match.start()] + "[REDACTED]" + redacted_text[word_match.end():]
+
+            pattern = rf'(?<!\w){re.escape(term_lower)}(?!\w)'
+            redacted_text = re.sub(pattern, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
+            return redacted_text
+
+        name_parts = term_lower.split()
+        first, last = name_parts[0], name_parts[-1]
+        first_initial = first[0]
+
+        for i in range(len(words) - 1, -1, -1):
             word_match = words[i]
-            word = word_match.group()
-            word_clean = re.sub(r'[^a-zA-Z]', '', word).lower()
-            word_start, word_end = word_match.start(), word_match.end()
-        
-            # Check if this word could be first name (or misspelling)
+            word_clean = re.sub(r'[^a-zA-Z]', '', word_match.group()).lower()
             if fuzz.ratio(word_clean, first) >= threshold:
-                # Look ahead for last name (allow up to 3 words for middle names)
                 for j in range(i + 1, min(i + 4, len(words))):
                     last_match = words[j]
-                    last_word = last_match.group()
-                    last_clean = re.sub(r'[^a-zA-Z]', '', last_word).lower()
-                
+                    last_clean = re.sub(r'[^a-zA-Z]', '', last_match.group()).lower()
                     if fuzz.ratio(last_clean, last) >= threshold:
-                        # Found first and last name - redact from first to last word
-                        start = word_start
-                        end = last_match.end()
-                    
-                        # Check if already redacted
-                        overlap = any(r_start <= start < r_end or r_start < end <= r_end 
-                                    for r_start, r_end in redaction_positions)
-                    
-                        if not overlap:
-                            redacted_text = redacted_text[:start] + "[REDACTED]" + redacted_text[end:]
-                            redaction_positions.append((start, start + len("[REDACTED]")))
-                        
-                            # Completely rebuild words list from new text
-                            words = list(re.finditer(r'\b\w+\b', redacted_text))
-                            # Reset i to continue from beginning (safe since we're redacting)
-                            i = -1  # Will become 0 after i += 1
-                            break
-                else:
-                    i += 1
-                    continue
-            else:
-                i += 1
-                continue
-        
-            i += 1
-    
-        # Handle special formats with regex (for cases not caught by word-by-word approach)
-    
-        # Case: jak-milly, jak.milly, jak_milly
-        pattern1 = rf'\b{re.escape(first)}[._-]{re.escape(last)}\b'
-        redacted_text = re.sub(pattern1, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
-    
-        # Case: jakemilly (no separator)
-        pattern2 = rf'\b{re.escape(first)}{re.escape(last)}\b'
-        redacted_text = re.sub(pattern2, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
-    
-        # Case: j a milly or j a b milly (initials)
-        pattern3 = rf'\b{re.escape(first_initial)}(?:\s+[a-z]\.?)?\s+{re.escape(last)}\b'
-        redacted_text = re.sub(pattern3, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
-    
-        # Case: milly, jake
-        pattern4 = rf'\b{re.escape(last)}\s*,\s*{re.escape(first)}\b'
-        redacted_text = re.sub(pattern4, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
-    
-        # Case: j. milly, j milly
-        pattern5 = rf'\b{re.escape(first_initial)}\.?\s+{re.escape(last)}\b'
-        redacted_text = re.sub(pattern5, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
-    
+                        redacted_text = redacted_text[:word_match.start()] + "[REDACTED]" + redacted_text[last_match.end():]
+                        break
+
+        patterns = [
+            rf'\b{re.escape(first)}[._-]{re.escape(last)}\b',
+            rf'\b{re.escape(first_initial)}\.?\s+{re.escape(last)}\b',
+            rf'\b{re.escape(last)}\s*,\s*{re.escape(first)}\b'
+        ]
+        for p in patterns:
+            redacted_text = re.sub(p, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
+
         return redacted_text
-        
-    def redact_emails(self, text, threshold=80):
-        """Simplified email redaction"""
+
+    # Applies redaction to the given text by replacing all blacklisted terms and emails with [REDACTED].
+    # Processes terms in order of length to avoid conflicts.
+    def redact_text(self, text):
+        redacted_text = text
+        for term in sorted(self.blacklisted_terms, key=lambda s: -len(s)):
+            redacted_text = self.fuzzy_replace(redacted_text, term)
+        redacted_text = self.redact_emails(redacted_text)
+        return redacted_text
+
+    # Finds email addresses in the text and redacts them if they contain any blacklisted terms.
+    # Replaces matching emails with [REDACTED].
+    def redact_emails(self, text):
         email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
         emails = re.findall(email_pattern, text)
-    
-        # Also find usernames (LinkedIn profiles, etc.)
-        username_pattern = r'\b[A-Za-z0-9][A-Za-z0-9._-]{2,}[A-Za-z0-9]\b'
-        usernames = re.findall(username_pattern, text)
-    
         redacted_text = text
-    
-        for term in self.blacklisted_terms:
-            name_parts = term.lower().split()
-            if len(name_parts) < 2:
-                continue
-        
-            first = name_parts[0]
-            last = name_parts[-1]
-            first_initial = first[0]
-        
-            # Define all possible email/username patterns to check
-            patterns = [
-                f"{first}.{last}",     # jake.milly
-                f"{first}-{last}",      # jake-milly
-                f"{first}_{last}",      # jake_milly
-                f"{first}{last}",       # jakemilly
-                f"{first_initial}.{last}",  # j.milly
-                f"{first_initial}{last}",   # jmilly
-                f"{last}.{first}",      # milly.jake
-                f"{last}-{first}",      # milly-jake
-                f"{last}_{first}",      # milly_jake
-            ]
-        
-            # Check emails
-            for email in emails:
-                local = email.split('@')[0].lower()
-            
-                # Check each pattern
-                for pattern in patterns:
-                    if pattern in local:
-                        redacted_text = redacted_text.replace(email, "[REDACTED]")
-                        break
-                else:
-                    # Fuzzy check if local part contains both names
-                    if fuzz.partial_ratio(local, first) >= threshold and \
-                    fuzz.partial_ratio(local, last) >= threshold:
-                        redacted_text = redacted_text.replace(email, "[REDACTED]")
-        
-            # Check usernames (same logic)
-            for username in usernames:
-                if '@' in username:
-                    continue
-                
-                username_lower = username.lower()
-            
-                for pattern in patterns:
-                    if pattern in username_lower:
-                        redacted_text = redacted_text.replace(username, "[REDACTED]")
-                        break
-                else:
-                    if fuzz.partial_ratio(username_lower, first) >= threshold and \
-                    fuzz.partial_ratio(username_lower, last) >= threshold:
-                        redacted_text = redacted_text.replace(username, "[REDACTED]")
-    
+        for email in emails:
+            for term in self.blacklisted_terms:
+                term_lower = term.lower().strip()
+                if re.search(rf'(?<!\w){re.escape(term_lower)}(?!\w)', email.lower()):
+                    redacted_text = redacted_text.replace(email, "[REDACTED]")
+                    break
         return redacted_text
 
-    def redact_docx(self, input_path, output_path):
-        doc = Document(input_path)
-        
-        # Helper for run-level replacement (preserves images/formatting)
-        def replace_in_element(element):
-            for para in element.paragraphs:
-                # combines all runs (targeting split names)
-                full_text = "".join(run.text for run in para.runs)
-
-                #normalize text 
-                #normalized_text = self.normalize_text(full_text)
-                redacted_text = full_text
-                # fuzzy matching for edge cases
-                for term in self.blacklisted_terms:
-                    redacted_text = self.fuzzy_replace(redacted_text, term)
-                
-                redacted_text = self.redact_emails(redacted_text)
-                
-                #if content is changed, overwrite the paragraph
-                if redacted_text != full_text:
-                    #clear runs
-                    for run in para.runs:
-                        run.text = ""
-                    para.runs[0].text = redacted_text
-
-
-        # 1. Process Main Body
-        replace_in_element(doc)
-
-        # 2. Process Headers and Footers
-        for section in doc.sections:
-            replace_in_element(section.header)
-            replace_in_element(section.footer)
-
-        # 3. Process Tables
+    # Yields all paragraphs from a DOCX document, including those in tables and headers/footers.
+    # Helps to process text from all parts of the document.
+    def iter_docx_paragraphs(self, doc):
+        for para in doc.paragraphs:
+            yield para
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    replace_in_element(cell)
+                    for para in cell.paragraphs:
+                        yield para
+        for section in doc.sections:
+            for part in (section.header, section.footer):
+                for para in part.paragraphs:
+                    yield para
+                for table in part.tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            for para in cell.paragraphs:
+                                yield para
 
-        self.docx_to_txt(doc, output_path)
+    # Extracts all text from a DOCX document by combining text from all paragraphs.
+    # Returns the full text content as a single string.
+    def get_docx_text(self, doc):
+        return "\n".join(para.text for para in self.iter_docx_paragraphs(doc))
 
-    def docx_to_txt(self, doc, output_path):
-        txt_output_path = Path(output_path).with_suffix(".txt")
+    # Processes a DOCX file: extracts text, redacts it, saves as .txt, and verifies no terms remain.
+    def redact_docx_to_txt(self, input_path, output_path):
+        try:
+            doc = Document(str(input_path))
+        except Exception as e:
+            raise RuntimeError(f"Unable to open DOCX file: {e}")
 
-        with open(txt_output_path, "w", encoding="utf-8") as f:
-            for paragraph in doc.paragraphs:
-                f.write(paragraph.text + "\n")
+        raw_text = self.get_docx_text(doc)
+        redacted_text = self.redact_text(raw_text)
+        self.write_text_output(output_path, redacted_text)
+        self.verify_text_output(output_path)
 
-            for table in doc.tables:
-                for row in table.rows:
-                    row_text = []
-                    for cell in row.cells:
-                        for paragraph in cell.paragraphs:
-                            row_text.append(paragraph.text)
-                    f.write(" | ".join(row_text) + "\n")
+    # Extracts text from a single PDF page using PyMuPDF.
+    def extract_pdf_page_text(self, page):
+        return page.get_text("text")
 
-            for section in doc.sections:
-                for paragraph in section.header.paragraphs:
-                    f.write(paragraph.text + "\n")
-                for paragraph in section.footer.paragraphs:
-                    f.write(paragraph.text + "\n")
+    # Processes a PDF file: extracts text from all pages, redacts it, saves as .txt, and verifies.
+    def redact_pdf_to_txt(self, input_path, output_path):
+        try:
+            doc = fitz.open(str(input_path))
+        except Exception as e:
+            raise RuntimeError(f"Unable to open PDF file: {e}")
 
-    def redact_pdf(self, input_path, output_path):
-        doc = fitz.open(input_path)
-    
-        for page in doc:
-            # Get all text blocks with their positions
-            blocks = page.get_text("dict")["blocks"]
-        
-            for block in blocks:
-                if "lines" in block:
-                    for line in block["lines"]:
-                        for span in line["spans"]:
-                            original_text = span["text"]
-                        
-                            # Apply redaction to this span's text
-                            redacted_text = original_text
-                        
-                            # Apply fuzzy replacement for names
-                            for term in self.blacklisted_terms:
-                                redacted_text = self.fuzzy_replace(redacted_text, term)
-                        
-                            # Apply email redaction
-                            redacted_text = self.redact_emails(redacted_text)
-                        
-                            # If text was changed, redact this span
-                            if redacted_text != original_text:
-                                # Get the rectangle for this span
-                                rect = fitz.Rect(span["bbox"])
-                                page.add_redact_annot(rect, fill=(0, 0, 0))
-        
-            # Also check for specific email patterns that might span multiple spans
-            email_pattern = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
-            page_text = page.get_text("text")
-            emails = re.findall(email_pattern, page_text)
-        
-            for email in emails:
-                # Check if email contains any blacklisted terms
-                should_redact = False
-                email_lower = email.lower()
-            
-                for term in self.blacklisted_terms:
-                    name_parts = term.lower().split()
-                    if len(name_parts) < 2:
-                        continue
-                
-                    first = name_parts[0]
-                    last = name_parts[-1]
-                
-                    # Check various email formats
-                    local_part = email.split("@")[0].lower()
-                
-                    # Check for first.last, first_last, firstlast, etc.
-                    if (f"{first}.{last}" in local_part or
-                        f"{first}-{last}" in local_part or
-                        f"{first}_{last}" in local_part or
-                        f"{first}{last}" in local_part or
-                        (local_part.startswith(first[0]) and last in local_part)):
-                        should_redact = True
-                        break
-            
-                if should_redact:
-                    areas = page.search_for(email)
-                    for rect in areas:
-                        page.add_redact_annot(rect, fill=(0, 0, 0))
-        
-            # Apply all redactions
-            page.apply_redactions()
-    
-        doc.save(output_path)
-        self.pdf_to_txt(doc, output_path)
-
-    def pdf_to_txt(self, doc, output_path):
-        txt_output_path = Path(output_path).with_suffix(".txt")
-
-        with open(txt_output_path, "w", encoding="utf-8") as f:
+        try:
+            page_texts = []
             for page in doc:
-                text = page.get_text("text")
-                text = re.sub(r'(?<!\n)\n(?!\n)', ' ', text) # removes new line after each line
-                f.write(text)
+                page_texts.append(self.extract_pdf_page_text(page))
+            raw_text = "\n".join(page_texts)
+            redacted_text = self.redact_text(raw_text)
+            self.write_text_output(output_path, redacted_text)
+            self.verify_text_output(output_path)
+        except Exception as e:
+            raise RuntimeError(f"Failed to extract or verify redacted PDF text: {e}")
+        finally:
+            doc.close()
 
-        doc.close()
+    # Writes the given text to a file at the specified path.
+    def write_text_output(self, output_path, text):
+        try:
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(text)
+        except Exception as e:
+            raise RuntimeError(f"Failed to write text output: {e}")
+
+    # Checks the output file to ensure no blacklisted terms remain.
+    # Raises an error if any are found.
+    def verify_text_output(self, output_path):
+        try:
+            with open(output_path, "r", encoding="utf-8") as f:
+                content = f.read().lower()
+        except Exception as e:
+            raise RuntimeError(f"Unable to verify text output: {e}")
+
+        found = [term for term in self.blacklisted_terms if term.lower() in content]
+        if found:
+            raise RuntimeError(f"Verification failed. Unredacted terms found in text output: {', '.join(sorted(set(found)))}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
