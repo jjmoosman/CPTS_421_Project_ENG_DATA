@@ -1,6 +1,7 @@
 import sys
 import re
 import pandas as pd
+import unicodedata
 from pathlib import Path
 from rapidfuzz import fuzz
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, 
@@ -41,6 +42,13 @@ class RedactorApp(QMainWindow):
 
         # Step 1: Input names and IDs
         layout.addWidget(QLabel("<b>Step 1: Input Names and IDs to Remove</b>"))
+        
+        prof_layout = QVBoxLayout()
+        prof_layout.addWidget(QLabel("Professor Names:"))
+        self.prof_input = QTextEdit()
+        self.prof_input.setFixedHeight(80)
+        prof_layout.addWidget(self.prof_input)
+        layout.addLayout(prof_layout)
         
         name_layout = QVBoxLayout()
         name_layout.addWidget(QLabel("Student Names:"))
@@ -241,6 +249,13 @@ class RedactorApp(QMainWindow):
 
         return terms
 
+    # Normalizes professor names by removing common titles like Dr., Prof., Mr., etc.
+    def normalize_name(self, name):
+        name = name.strip()
+        name = re.sub(r'^(?:dr|prof|professor|mr|mrs|ms|miss|mx)\.?\s+', '', name, flags=re.IGNORECASE)
+        name = re.sub(r'\s+', ' ', name).strip()
+        return name
+
     # Opens a folder dialog for the user to choose where to save the redacted files.
     # Sets the output directory for saving results.
     @safe_slot
@@ -256,9 +271,16 @@ class RedactorApp(QMainWindow):
     # Shows progress and a completion message.
     @safe_slot
     def run_redaction(self, *args, **kwargs):
+        raw_professors = [self.normalize_name(t) for t in self.parse_input_list(self.prof_input.toPlainText())]
         raw_names = self.parse_input_list(self.name_input.toPlainText())
         raw_ids = self.parse_input_list(self.id_input.toPlainText())
-        self.blacklisted_terms = {t for t in raw_names + raw_ids if len(t) > 1}
+        self.blacklisted_terms = {t for t in raw_professors + raw_names + raw_ids if len(t) > 1}
+        header_terms = set(raw_professors + raw_names + raw_ids)
+        for term in raw_professors + raw_names:
+            if ' ' in term:
+                parts = term.split()
+                header_terms.update(parts)
+        self.header_terms = {t for t in header_terms if len(t) > 1}
         
         self.selected_files = [f for f in self.selected_files if Path(f).exists()]
         if not self.selected_files or not self.blacklisted_terms:
@@ -328,11 +350,16 @@ class RedactorApp(QMainWindow):
 
         first, last = name_parts[0], name_parts[-1]
         first_initial = first[0] if first else ''
+        honorific_prefix = r'(?:dr|prof|professor)\.?\s+'
 
+        middle_token = r'(?:[A-Za-z]+\.?|[A-Za-z]\.)'
+        separator = r'(?:[\s\.\-]+)'
         patterns = [
             rf'\b{re.escape(first)}[._-]{re.escape(last)}\b',
             rf'\b{re.escape(first_initial)}\.?\s+{re.escape(last)}\b',
-            rf'\b{re.escape(last)}\s*,\s*{re.escape(first)}\b'
+            rf'\b{re.escape(last)}\s*,\s*{re.escape(first)}\b',
+            rf'\b{re.escape(first)}(?:{separator}{middle_token}){{0,4}}{separator}{re.escape(last)}\b',
+            rf'\b{honorific_prefix}{re.escape(first)}(?:{separator}{middle_token}){{0,4}}{separator}{re.escape(last)}\b'
         ]
         for p in patterns:
             redacted_text = re.sub(p, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
@@ -432,6 +459,29 @@ class RedactorApp(QMainWindow):
     def extract_pdf_page_text(self, page):
         return page.get_text("text")
 
+    # Cleans up corrupted special characters found in poorly encoded PDFs.
+    # Converts ligatures, accented characters, and smart quotes to their ASCII equivalents.
+    # This ensures clean, readable text in the output file.
+    def clean_pdf_text(self, text):
+        text = unicodedata.normalize('NFKC', text)
+
+        # Fix common PDF encoding artifacts
+        text = re.sub(r'Ɵ', 'ti', text)
+
+        replacements = {
+            '–': '-',
+            '—': '-',
+            '“': '"',
+            '”': '"',
+            '‘': "'",
+            '’': "'",
+        }
+
+        for k, v in replacements.items():
+            text = text.replace(k, v)
+
+        return text
+
     # Processes a PDF file: extracts text from all pages, redacts it, saves as .txt, and verifies.
     def redact_pdf_to_txt(self, input_path, output_path):
         try:
@@ -442,7 +492,12 @@ class RedactorApp(QMainWindow):
         try:
             page_texts = []
             for page in doc:
-                page_texts.append(self.extract_pdf_page_text(page))
+                page_text = self.extract_pdf_page_text(page)
+                page_text = self.clean_pdf_text(page_text)
+                lines = page_text.split('\n')
+                if lines and any(term.lower() in lines[0].lower() for term in self.header_terms):
+                    lines[0] = "[REDACTED HEADER]"
+                page_texts.append('\n'.join(lines))
             raw_text = "\n".join(page_texts)
             redacted_text = self.redact_text(raw_text)
             self.write_text_output(output_path, redacted_text)
