@@ -215,6 +215,32 @@ class RedactorApp(QMainWindow):
         self.selected_files = []
         self.file_list_label.setText("No files selected")
         
+    # Parses pasted names/IDs into individual blacklist terms.
+    # Supports newline, semicolon, tab separators and converts Last,First style names into full name terms.
+    def parse_input_list(self, raw_text):
+        entries = re.split(r'[\n;\t]+', raw_text)
+        terms = []
+        for entry in entries:
+            entry = entry.strip()
+            if not entry:
+                continue
+
+            if ',' in entry:
+                parts = [p.strip() for p in entry.split(',') if p.strip()]
+                if len(parts) == 2:
+                    last, first = parts
+                    terms.append(f"{first} {last}")
+                    continue
+                # Fall back to splitting across commas when there are more than two segments.
+                for part in parts:
+                    if part:
+                        terms.append(part)
+                continue
+
+            terms.append(entry)
+
+        return terms
+
     # Opens a folder dialog for the user to choose where to save the redacted files.
     # Sets the output directory for saving results.
     @safe_slot
@@ -230,9 +256,9 @@ class RedactorApp(QMainWindow):
     # Shows progress and a completion message.
     @safe_slot
     def run_redaction(self, *args, **kwargs):
-        raw_names = self.name_input.toPlainText().split('\n')
-        raw_ids = self.id_input.toPlainText().split('\n')
-        self.blacklisted_terms = {t.strip() for t in raw_names + raw_ids if len(t.strip()) > 1}
+        raw_names = self.parse_input_list(self.name_input.toPlainText())
+        raw_ids = self.parse_input_list(self.id_input.toPlainText())
+        self.blacklisted_terms = {t for t in raw_names + raw_ids if len(t) > 1}
         
         self.selected_files = [f for f in self.selected_files if Path(f).exists()]
         if not self.selected_files or not self.blacklisted_terms:
@@ -296,20 +322,12 @@ class RedactorApp(QMainWindow):
             redacted_text = re.sub(pattern, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
             return redacted_text
 
-        name_parts = term_lower.split()
-        first, last = name_parts[0], name_parts[-1]
-        first_initial = first[0]
+        name_parts = [re.sub(r'[^a-zA-Z0-9]', '', part).lower() for part in term_lower.split() if part.strip()]
+        if not name_parts:
+            return redacted_text
 
-        for i in range(len(words) - 1, -1, -1):
-            word_match = words[i]
-            word_clean = re.sub(r'[^a-zA-Z]', '', word_match.group()).lower()
-            if fuzz.ratio(word_clean, first) >= threshold:
-                for j in range(i + 1, min(i + 4, len(words))):
-                    last_match = words[j]
-                    last_clean = re.sub(r'[^a-zA-Z]', '', last_match.group()).lower()
-                    if fuzz.ratio(last_clean, last) >= threshold:
-                        redacted_text = redacted_text[:word_match.start()] + "[REDACTED]" + redacted_text[last_match.end():]
-                        break
+        first, last = name_parts[0], name_parts[-1]
+        first_initial = first[0] if first else ''
 
         patterns = [
             rf'\b{re.escape(first)}[._-]{re.escape(last)}\b',
@@ -318,6 +336,35 @@ class RedactorApp(QMainWindow):
         ]
         for p in patterns:
             redacted_text = re.sub(p, "[REDACTED]", redacted_text, flags=re.IGNORECASE)
+
+        text_to_scan = redacted_text
+        words = list(re.finditer(r'\b[\w-]+\b', text_to_scan))
+        min_match = max(2, len(name_parts) - 1)
+        match_ranges = []
+
+        for seq_len in range(len(name_parts), min_match - 1, -1):
+            for term_start in range(0, len(name_parts) - seq_len + 1):
+                subseq = name_parts[term_start:term_start + seq_len]
+                subseq_text = " ".join(subseq)
+                for i in range(0, len(words) - seq_len + 1):
+                    window = words[i:i + seq_len]
+                    window_text = " ".join(
+                        re.sub(r'[^a-zA-Z0-9]', '', w.group()).lower() for w in window
+                    )
+                    if fuzz.ratio(window_text, subseq_text) >= threshold:
+                        match_ranges.append((window[0].start(), window[-1].end()))
+
+        if match_ranges:
+            match_ranges = sorted(match_ranges, key=lambda r: (r[0], -r[1]))
+            merged_ranges = []
+            for start, end in match_ranges:
+                if not merged_ranges or start > merged_ranges[-1][1]:
+                    merged_ranges.append([start, end])
+                else:
+                    merged_ranges[-1][1] = max(merged_ranges[-1][1], end)
+
+            for start, end in reversed(merged_ranges):
+                redacted_text = redacted_text[:start] + "[REDACTED]" + redacted_text[end:]
 
         return redacted_text
 
