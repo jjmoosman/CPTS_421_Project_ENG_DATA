@@ -184,3 +184,103 @@
   font-weight: 700;
 }
 
+.annotate-text-display {
+  border: 1px solid #c5d5f0;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  min-height: 180px;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  background: #fff;
+  user-select: text;
+  cursor: text;
+}
+
+.annotate-file-label {
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+  color: #406b99;
+}
+
+.annotate-selection-status {
+  font-size: 0.85rem;
+  color: #555;
+  min-height: 1.4rem;
+}
+
+.annotate-selection-status.empty {
+  color: #aaa;
+}
+
+.annotate-input-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+.annotate-input-row input {
+  flex-grow: 1;
+}
+
+.annotate-list-header {
+  margin-top: 1rem;
+}
+
+.annotate-list {
+  padding-left: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.annotate-list-item {
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid #dbe3f8;
+  background: #f7faff;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.annotate-list-item.active {
+  border-color: #f5a623;
+  background: #fff8ee;
+}
+
+.annotate-item-note {
+  font-weight: 600;
+}
+
+.annotate-item-excerpt {
+  color: #888;
+  font-size: 0.8rem;
+  margin-top: 0.2rem;
+}
+
+.annotate-item-excerpt.general {
+  color: #aaa;
+}
+
+.annotate-item-delete {
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: #c0392b;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.annotate-highlight {
+  background: #ffe082;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.annotate-highlight.active {
+  background: #f5a623;
+  outline: 2px solid #f5a623;
+}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, Route, Routes, Navigate, useNavigate } from 'react-router-dom';
 import './App.css';
 
@@ -200,39 +200,147 @@ function KeywordContextTool() {
   );
 }
 
-function AnnotateTool() {
+function AnnotateTool({ sharedText, setSharedText, sharedFileName }) {
+  const [sourceText, setSourceText] = useState(sharedText || 'Paste or type text here...');
   const [annotations, setAnnotations] = useState([]);
   const [newAnnotation, setNewAnnotation] = useState('');
+  const [pendingSelection, setPendingSelection] = useState(null);
+  const [activeAnnotation, setActiveAnnotation] = useState(null);
+  const textRef = useRef(null);
+
+  useEffect(() => {
+    if (sharedText) setSourceText(sharedText);
+  }, [sharedText]);
+
+  const handleTextMouseUp = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) {
+      setPendingSelection(null);
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    const preSelectionRange = range.cloneRange();
+    preSelectionRange.selectNodeContents(textRef.current);
+    preSelectionRange.setEnd(range.startContainer, range.startOffset);
+    const start = preSelectionRange.toString().length;
+    const selectedText = selection.toString();
+    if (selectedText.length > 0) {
+      setPendingSelection({ start, end: start + selectedText.length, selectedText });
+    } else {
+      setPendingSelection(null);
+    }
+  };
 
   const addAnnotation = () => {
     if (!newAnnotation.trim()) return;
-    setAnnotations(prev => [...prev, newAnnotation.trim()]);
+    const annotation = {
+      id: Date.now(),
+      start: pendingSelection?.start ?? null,
+      end: pendingSelection?.end ?? null,
+      selectedText: pendingSelection?.selectedText ?? null,
+      note: newAnnotation.trim(),
+    };
+    setAnnotations(prev => [...prev, annotation]);
     setNewAnnotation('');
+    setPendingSelection(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const deleteAnnotation = (id) => {
+    setAnnotations(prev => prev.filter(a => a.id !== id));
+    if (activeAnnotation?.id === id) setActiveAnnotation(null);
+  };
+
+  const renderAnnotatedText = () => {
+    if (!annotations.length) return <span>{sourceText}</span>;
+    const ranges = annotations
+      .filter(a => a.start !== null)
+      .sort((a, b) => a.start - b.start);
+    const parts = [];
+    let cursor = 0;
+    ranges.forEach((ann) => {
+      if (ann.start > cursor) {
+        parts.push(<span key={`text-${cursor}`}>{sourceText.slice(cursor, ann.start)}</span>);
+      }
+      const isActive = activeAnnotation?.id === ann.id;
+      parts.push(
+        <mark
+          key={`mark-${ann.id}`}
+          onClick={() => setActiveAnnotation(isActive ? null : ann)}
+          className={`annotate-highlight${isActive ? ' active' : ''}`}
+          title={ann.note}
+        >
+          {sourceText.slice(ann.start, ann.end)}
+        </mark>
+      );
+      cursor = Math.max(cursor, ann.end);
+    });
+    if (cursor < sourceText.length) {
+      parts.push(<span key="text-end">{sourceText.slice(cursor)}</span>);
+    }
+    return parts;
   };
 
   return (
-    <SearchTool
-      title="Annotate"
-      subtitle="Search text first, then add annotations linked to your findings."
-      extraRender={({ results }) => (
-        <div>
-          <h3>Annotation Manager</h3>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <input
-              value={newAnnotation}
-              onChange={(e) => setNewAnnotation(e.target.value)}
-              placeholder="Enter new annotation"
-              style={{ flexGrow: 1 }}
-            />
-            <button className="run-search" type="button" onClick={addAnnotation}>Add</button>
-          </div>
-          <p>Found matches: {results.length}</p>
-          <ul style={{ marginTop: '0.5rem', paddingLeft: '1.2rem' }}>
-            {annotations.map((ann, idx) => <li key={idx}>{ann}</li>)}
+    <ToolPage title="Annotate" subtitle="Highlight text then add an annotation, or annotate the document generally.">
+      <div className="search-panel">
+        <label>Document text</label>
+        <div
+          ref={textRef}
+          onMouseUp={handleTextMouseUp}
+          className="annotate-text-display"
+        >
+          {renderAnnotatedText()}
+        </div>
+
+        <p className="annotate-file-label">
+          {sharedFileName ? `Loaded: ${sharedFileName}` : 'No file loaded.'}
+        </p>
+
+        <div className={`annotate-selection-status${pendingSelection ? '' : ' empty'}`}>
+          {pendingSelection
+            ? <>Selected: <strong>"{pendingSelection.selectedText.slice(0, 60)}{pendingSelection.selectedText.length > 60 ? '…' : ''}"</strong></>
+            : <span>No text selected — annotation will apply to the whole document.</span>
+          }
+        </div>
+
+        <div className="annotate-input-row">
+          <input
+            value={newAnnotation}
+            onChange={(e) => setNewAnnotation(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addAnnotation()}
+            placeholder="Enter annotation..."
+          />
+          <button className="run-search" type="button" onClick={addAnnotation}>Add</button>
+        </div>
+
+        <div className="annotate-list-header">
+          <h3>Annotations ({annotations.length})</h3>
+          {annotations.length === 0 && <p className="annotate-selection-status empty">No annotations yet.</p>}
+          <ul className="annotate-list">
+            {annotations.map((ann) => (
+              <li
+                key={ann.id}
+                onClick={() => setActiveAnnotation(activeAnnotation?.id === ann.id ? null : ann)}
+                className={`annotate-list-item${activeAnnotation?.id === ann.id ? ' active' : ''}`}
+              >
+                <div className="annotate-item-note">{ann.note}</div>
+                {ann.selectedText
+                  ? <div className="annotate-item-excerpt">↳ "{ann.selectedText.slice(0, 80)}{ann.selectedText.length > 80 ? '…' : ''}"</div>
+                  : <div className="annotate-item-excerpt general">General annotation</div>
+                }
+                <button
+                  className="annotate-item-delete"
+                  onClick={(e) => { e.stopPropagation(); deleteAnnotation(ann.id); }}
+                >
+                  Delete
+                </button>
+              </li>
+            ))}
           </ul>
         </div>
-      )}
-    />
+      </div>
+    </ToolPage>
   );
 }
 
