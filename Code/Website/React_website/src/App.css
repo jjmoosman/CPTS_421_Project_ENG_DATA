@@ -284,3 +284,114 @@
   background: #f5a623;
   outline: 2px solid #f5a623;
 }
+
+/* KWIC / Concordance */
+.kwic-results {
+  border-top: 1px solid #e2e8f2;
+  padding-top: 0.8rem;
+}
+
+.kwic-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.kwic-header h3 {
+  margin: 0;
+}
+
+.kwic-sort-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: #586e8c;
+}
+
+.kwic-sort-btn {
+  background: #eef3fb;
+  border: 1px solid #cdd8ee;
+  border-radius: 0.3rem;
+  padding: 0.18rem 0.5rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #3a5580;
+}
+
+.kwic-sort-btn.active {
+  background: #0f66d0;
+  color: white;
+  border-color: #0f66d0;
+}
+
+.kwic-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #dbe3f8;
+  border-radius: 0.5rem;
+}
+
+.kwic-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  font-family: monospace;
+}
+
+.kwic-table tr:nth-child(even) {
+  background: #f7faff;
+}
+
+.kwic-table tr:hover {
+  background: #edf3ff;
+}
+
+.kwic-table td {
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid #edf1fb;
+  vertical-align: middle;
+}
+
+.kwic-num {
+  color: #8a9cbf;
+  font-size: 0.75rem;
+  width: 2.5rem;
+  text-align: right;
+  padding-right: 0.75rem;
+  font-family: sans-serif;
+}
+
+.kwic-left {
+  text-align: right;
+  color: #333;
+  white-space: nowrap;
+  max-width: 32vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+}
+
+.kwic-keyword {
+  text-align: center;
+  font-weight: 700;
+  color: #a61b10;
+  background: #fff3a8;
+  white-space: nowrap;
+  padding: 0.3rem 0.9rem;
+}
+
+.kwic-right {
+  text-align: left;
+  color: #333;
+  white-space: nowrap;
+  max-width: 32vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kwic-results .error {
+  color: #a61b10;
+  margin-bottom: 0.6rem;
+}

@@ -191,12 +191,198 @@ function SearchTool({ title, subtitle, extraRender, sharedText, setSharedText, s
   );
 }
 
-function KeywordContextTool() {
+// KWIC (Keyword in Context) concordance tool, modeled after AntConc's Concordance view.
+// Receives the shared document text from the Document Manager via props so the user
+// doesn't have to paste text twice.
+function KeywordContextTool({ sharedText, setSharedText, sharedFileName }) {
+  // The full document text the user will search through
+  const [sourceText, setSourceText] = useState(sharedText || '');
+  // The word or regex pattern the user typed into the search box
+  const [query, setQuery] = useState('');
+  // When true, the query is treated as a regular expression instead of a plain word
+  const [isRegex, setIsRegex] = useState(false);
+  // When true, the search respects uppercase/lowercase; otherwise it ignores case
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  // How many words to show on each side of the matched keyword in the concordance table
+  const [contextWords, setContextWords] = useState(5);
+  // Array of hit objects produced by the last search run
+  const [results, setResults] = useState([]);
+  // Holds an error message if the regex is invalid or no matches were found
+  const [error, setError] = useState('');
+  // Which column the concordance table is currently sorted by
+  const [sortBy, setSortBy] = useState('position');
+  // 'asc' or 'desc' — direction of the current sort
+  const [sortDir, setSortDir] = useState('asc');
+
+  // Keep the local text in sync whenever the Document Manager loads a new file
+  useEffect(() => {
+    if (sharedText) setSourceText(sharedText);
+  }, [sharedText]);
+
+  const runSearch = () => {
+    setError('');
+    if (!query.trim()) { setResults([]); return; }
+    try {
+      // Build flags: always global so exec() loops; add 'i' when case-insensitive
+      const flags = caseSensitive ? 'g' : 'gi';
+      // If not in regex mode, escape special characters so the query is treated literally
+      const pattern = isRegex ? query : escapeRegExp(query);
+      const regexp = new RegExp(pattern, flags);
+      const found = [];
+      let match;
+
+      // Loop through every occurrence of the pattern in the document
+      while ((match = regexp.exec(sourceText)) !== null) {
+        const start = match.index;
+        const end = start + match[0].length;
+
+        // Split everything before the match into words to enable word-level sorting later
+        const leftWords = sourceText.slice(0, start).split(/\s+/).filter(Boolean);
+        // Split everything after the match into words for the same reason
+        const rightWords = sourceText.slice(end).split(/\s+/).filter(Boolean);
+
+        found.push({
+          id: found.length,           // unique row index used as the React key
+          position: start,            // character offset in the document (used for # sort)
+          keyword: match[0],          // the exact text that was matched
+          // Take only the last N words from the left side for display
+          left: leftWords.slice(-contextWords).join(' '),
+          // Take only the first N words from the right side for display
+          right: rightWords.slice(0, contextWords).join(' '),
+          // Keep the full word arrays so sorting by 1L/2L/1R/2R can look further back or ahead
+          leftWords,
+          rightWords,
+        });
+
+        // Guard against infinite loops on zero-length matches (e.g. the pattern "a*")
+        if (match[0].length === 0) regexp.lastIndex += 1;
+      }
+
+      setResults(found);
+      if (found.length === 0) setError('No matches found.');
+    } catch (e) {
+      setResults([]);
+      setError('Invalid regex: ' + e.message);
+    }
+  };
+
+  // Helper: get the nth word from a word array for sorting.
+  // Positive n counts from the start (right-context words): n=1 is the first word after the keyword.
+  // Negative n counts from the end (left-context words): n=-1 is the word immediately before the keyword.
+  const wordAt = (words, n) =>
+    n > 0 ? words[n - 1]?.toLowerCase() || '' : words[words.length + n]?.toLowerCase() || '';
+
+  // Produce a sorted copy of results without mutating the original array
+  const sortedResults = [...results].sort((a, b) => {
+    let va, vb;
+    if (sortBy === 'position') { va = a.position; vb = b.position; }
+    else if (sortBy === 'keyword') { va = a.keyword.toLowerCase(); vb = b.keyword.toLowerCase(); }
+    // 1L / 2L: sort by the 1st or 2nd word to the LEFT of the keyword
+    else if (sortBy === '1L') { va = wordAt(a.leftWords, -1); vb = wordAt(b.leftWords, -1); }
+    else if (sortBy === '2L') { va = wordAt(a.leftWords, -2); vb = wordAt(b.leftWords, -2); }
+    // 1R / 2R: sort by the 1st or 2nd word to the RIGHT of the keyword
+    else if (sortBy === '1R') { va = wordAt(a.rightWords, 1); vb = wordAt(b.rightWords, 1); }
+    else if (sortBy === '2R') { va = wordAt(a.rightWords, 2); vb = wordAt(b.rightWords, 2); }
+    const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  // If the user clicks the active sort column, flip direction; otherwise switch to that column ascending
+  const toggleSort = (col) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(col); setSortDir('asc'); }
+  };
+
   return (
-    <SearchTool
-      title="Keyword & Context"
-      subtitle="Lookup terms with literal or regex search and see nearby context."
-    />
+    <ToolPage title="Keyword in Context (KWIC)" subtitle="Concordance view — each match is centered with surrounding context. Click sort buttons to reorder.">
+      <div className="search-panel">
+        <label>
+          Document text
+          <textarea
+            value={sourceText}
+            onChange={(e) => {
+              setSourceText(e.target.value);
+              if (setSharedText) setSharedText(e.target.value);
+            }}
+            rows={6}
+          />
+        </label>
+        <p style={{ marginTop: '0.4rem', fontSize: '0.85rem', color: '#406b99' }}>
+          {sharedFileName ? `Loaded: ${sharedFileName}` : 'No file loaded.'}
+        </p>
+
+        <div className="search-controls">
+          <label>
+            Search query
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && runSearch()}
+              placeholder="word or regex"
+            />
+          </label>
+          <label>
+            Context words
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={contextWords}
+              onChange={(e) => setContextWords(Math.max(1, Math.min(20, Number(e.target.value))))}
+              style={{ width: '4.5rem' }}
+            />
+          </label>
+          <label>
+            <input type="checkbox" checked={isRegex} onChange={(e) => setIsRegex(e.target.checked)} />
+            Use regex
+          </label>
+          <label>
+            <input type="checkbox" checked={caseSensitive} onChange={(e) => setCaseSensitive(e.target.checked)} />
+            Case sensitive
+          </label>
+          <button className="run-search" onClick={runSearch} type="button">Search</button>
+        </div>
+
+        <div className="kwic-results">
+          <div className="kwic-header">
+            <h3>Concordance — {results.length} hit{results.length !== 1 ? 's' : ''}</h3>
+            {results.length > 0 && (
+              <div className="kwic-sort-row">
+                <span>Sort:</span>
+                {['position', '2L', '1L', 'keyword', '1R', '2R'].map(col => (
+                  <button
+                    key={col}
+                    onClick={() => toggleSort(col)}
+                    className={`kwic-sort-btn${sortBy === col ? ' active' : ''}`}
+                    type="button"
+                  >
+                    {col === 'position' ? '#' : col}
+                    {sortBy === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {error && <div className="error">{error}</div>}
+          {results.length > 0 && (
+            <div className="kwic-table-wrap">
+              <table className="kwic-table">
+                <tbody>
+                  {sortedResults.map((item, idx) => (
+                    <tr key={item.id}>
+                      <td className="kwic-num">{idx + 1}</td>
+                      <td className="kwic-left">{item.left}</td>
+                      <td className="kwic-keyword">{item.keyword}</td>
+                      <td className="kwic-right">{item.right}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </ToolPage>
   );
 }
 
