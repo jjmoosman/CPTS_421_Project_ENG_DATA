@@ -400,12 +400,14 @@
 .search-panel-with-files {
   display: flex;
   gap: 1rem;
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .file-list-sidebar {
   flex-shrink: 0;
-  width: 170px;
+  width: 180px;
+  max-height: calc(100vh - 8.5rem);
+  overflow-y: auto;
   background: #f7faff;
   border: 1px solid #dbe3f8;
   border-radius: 0.6rem;
@@ -416,6 +418,64 @@
   font-size: 0.9rem;
   margin: 0 0 0.6rem 0;
   color: #3a5580;
+}
+
+.annotate-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(260px, 1fr);
+  gap: 1rem;
+}
+
+.annotate-doc-panel,
+.annotate-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.annotate-doc-panel label {
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.annotate-text-display {
+  border: 1px solid #c5d5f0;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  min-height: 180px;
+  max-height: 420px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  background: #fff;
+  user-select: text;
+  cursor: text;
+}
+
+.kwic-results {
+  border-top: 1px solid #e2e8f2;
+  padding-top: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  max-height: 520px;
+}
+
+.kwic-table-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 340px;
+  border: 1px solid #dbe3f8;
+  border-radius: 0.5rem;
+}
+
+.search-results {
+  border-top: 1px solid #e2e8f2;
+  padding-top: 0.8rem;
+  max-height: 420px;
+  overflow-y: auto;
 }
 
 .file-list {

@@ -378,41 +378,44 @@ function AnnotateTool({ uploadedFiles }) {
     <ToolPage title="Annotate" subtitle="Highlight text then add an annotation, or annotate the document generally.">
       <div className="search-panel-with-files">
         <FileSidebar uploadedFiles={uploadedFiles} selectedFileIds={selectedFileIds} onToggle={toggleFileSelection} />
-        <div className="search-panel">
-          <label>Document text</label>
-          <div
-            ref={textRef}
-            onMouseUp={handleTextMouseUp}
-            className="annotate-text-display"
-          >
-            {sourceText
-              ? renderAnnotatedText()
-              : <span className="no-files">No files selected. Upload files in Document Manager.</span>
-            }
+        <div className="annotate-main">
+          <div className="annotate-doc-panel">
+            <label>Document text</label>
+            <div
+              ref={textRef}
+              onMouseUp={handleTextMouseUp}
+              className="annotate-text-display"
+            >
+              {sourceText
+                ? renderAnnotatedText()
+                : <span className="no-files">No files selected. Upload files in Document Manager.</span>
+              }
+            </div>
           </div>
 
-          <div className={`annotate-selection-status${pendingSelection ? '' : ' empty'}`}>
-            {pendingSelection
-              ? <>Selected: <strong>"{pendingSelection.selectedText.slice(0, 60)}{pendingSelection.selectedText.length > 60 ? '…' : ''}"</strong></>
-              : <span>No text selected — annotation will apply to the whole document.</span>
-            }
-          </div>
+          <div className="annotate-controls">
+            <div className={`annotate-selection-status${pendingSelection ? '' : ' empty'}`}>
+              {pendingSelection
+                ? <>Selected: <strong>"{pendingSelection.selectedText.slice(0, 60)}{pendingSelection.selectedText.length > 60 ? '…' : ''}"</strong></>
+                : <span>No text selected — annotation will apply to the whole document.</span>
+              }
+            </div>
 
-          <div className="annotate-input-row">
-            <input
-              value={newAnnotation}
-              onChange={(e) => setNewAnnotation(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && addAnnotation()}
-              placeholder="Enter annotation..."
-            />
-            <button className="run-search" type="button" onClick={addAnnotation}>Add</button>
-          </div>
+            <div className="annotate-input-row">
+              <input
+                value={newAnnotation}
+                onChange={(e) => setNewAnnotation(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addAnnotation()}
+                placeholder="Enter annotation..."
+              />
+              <button className="run-search" type="button" onClick={addAnnotation}>Add</button>
+            </div>
 
-          <div className="annotate-list-header">
-            <h3>Annotations ({annotations.length})</h3>
-            {annotations.length === 0 && <p className="annotate-selection-status empty">No annotations yet.</p>}
-            <ul className="annotate-list">
-              {annotations.map((ann) => (
+            <div className="annotate-list-header">
+              <h3>Annotations ({annotations.length})</h3>
+              {annotations.length === 0 && <p className="annotate-selection-status empty">No annotations yet.</p>}
+              <ul className="annotate-list">
+                {annotations.map((ann) => (
                 <li
                   key={ann.id}
                   onClick={() => setActiveAnnotation(activeAnnotation?.id === ann.id ? null : ann)}
@@ -435,6 +438,7 @@ function AnnotateTool({ uploadedFiles }) {
           </div>
         </div>
       </div>
+    </div>
     </ToolPage>
   );
 }
