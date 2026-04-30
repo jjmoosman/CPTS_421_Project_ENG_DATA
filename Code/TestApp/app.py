@@ -108,6 +108,13 @@ class RedactorApp(QMainWindow):
         self.process_btn.setStyleSheet("background-color: #2E7D32; color: white; font-weight: bold; height: 40px;")
         layout.addWidget(self.process_btn)
 
+        layout.addWidget(QLabel("<br><b>Results</b>"))
+        self.results_output = QTextEdit()
+        self.results_output.setReadOnly(True)
+        self.results_output.setFixedHeight(220)
+        self.results_output.setPlaceholderText("Processing results and logs will appear here. Scroll to view more output.")
+        layout.addWidget(self.results_output)
+
         self.progress = QProgressBar()
         layout.addWidget(self.progress)
         
@@ -222,6 +229,13 @@ class RedactorApp(QMainWindow):
     def clear_selection(self):
         self.selected_files = []
         self.file_list_label.setText("No files selected")
+
+    def log_result(self, message: str):
+        if hasattr(self, 'results_output'):
+            self.results_output.append(message)
+            self.results_output.verticalScrollBar().setValue(self.results_output.verticalScrollBar().maximum())
+        else:
+            print(message)
         
     # Parses pasted names/IDs into individual blacklist terms.
     # Supports newline, semicolon, tab separators and converts Last,First style names into full name terms.
@@ -282,9 +296,14 @@ class RedactorApp(QMainWindow):
                 header_terms.update(parts)
         self.header_terms = {t for t in header_terms if len(t) > 1}
         
+        if hasattr(self, 'results_output'):
+            self.results_output.clear()
+        self.log_result("Starting redaction...")
         self.selected_files = [f for f in self.selected_files if Path(f).exists()]
         if not self.selected_files or not self.blacklisted_terms:
-            QMessageBox.warning(self, "Missing Data", "Need files and names/IDs! Make sure selected files still exist.")
+            error_text = "Need files and names/IDs! Make sure selected files still exist."
+            self.log_result(f"Error: {error_text}")
+            QMessageBox.warning(self, "Missing Data", error_text)
             return
         
         # Determine final output path
@@ -316,12 +335,17 @@ class RedactorApp(QMainWindow):
                     self.redact_pdf_to_txt(file_path, out_path)
                 else:
                     raise ValueError(f"Unsupported file type: {file_path.suffix}")
+                self.log_result(f"Processed: {file_path.name} -> {out_path.name}")
             except Exception as e:
-                QMessageBox.warning(self, "Processing Error", f"Could not process {f_path}: {e}")
+                error_msg = f"Could not process {f_path}: {e}"
+                self.log_result(error_msg)
+                QMessageBox.warning(self, "Processing Error", error_msg)
             
             self.progress.setValue(i + 1)
         
-        QMessageBox.information(self, "Finished", f"Saved to: {final_output}")
+        finish_msg = f"Finished. Saved to: {final_output}"
+        self.log_result(finish_msg)
+        QMessageBox.information(self, "Finished", finish_msg)
 
     # Replaces occurrences of a term in the text with [REDACTED], using fuzzy matching for similarity.
     # Handles single words or full names by looking for matches in the text.

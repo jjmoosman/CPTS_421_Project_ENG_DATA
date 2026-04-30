@@ -262,6 +262,9 @@
 .search-results {
   border-top: 1px solid #e2e8f2;
   padding-top: 0.8rem;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  max-height: 54vh;
 }
 
 .search-results .error {
@@ -306,6 +309,9 @@
   list-style: none;
   margin: 0;
   padding: 0;
+  overflow-y: auto;
+  max-height: calc(54vh - 3rem);
+  padding-right: 0.4rem;
 }
 
 .search-results li {
@@ -504,6 +510,10 @@
 .kwic-results {
   border-top: 1px solid #e2e8f2;
   padding-top: 0.8rem;
+  max-height: 64vh;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr;
 }
 
 .kwic-header {
@@ -544,6 +554,8 @@
 
 .kwic-table-wrap {
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: 52vh;
   border: 1px solid #dbe3f8;
   border-radius: 0.5rem;
 }
@@ -609,4 +621,205 @@
 .kwic-results .error {
   color: #a61b10;
   margin-bottom: 0.6rem;
+<<<<<<< Updated upstream
+=======
+}
+
+/* File sidebar + panel layout */
+.search-panel-with-files {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.file-list-sidebar {
+  flex-shrink: 0;
+  width: 170px;
+  background: #f7faff;
+  border: 1px solid #dbe3f8;
+  border-radius: 0.6rem;
+  padding: 0.75rem;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.annotate-main {
+  display: grid;
+  grid-template-columns: minmax(340px, 1.2fr) minmax(280px, 0.8fr);
+  gap: 1rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.annotate-doc-panel,
+.annotate-controls {
+  background: #fff;
+  border: 1px solid #dbe3f8;
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.annotate-doc-panel label {
+  display: block;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+  color: #2b4063;
+}
+
+.annotate-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.annotate-text-display {
+  border: 1px solid #c5d5f0;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  min-height: 380px;
+  max-height: 66vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  background: #fff;
+  user-select: text;
+  cursor: text;
+}
+
+@media (max-width: 1060px) {
+  .annotate-main {
+    grid-template-columns: 1fr;
+  }
+}
+
+.file-list-sidebar h3 {
+  font-size: 0.9rem;
+  margin: 0 0 0.6rem 0;
+  color: #3a5580;
+  flex-shrink: 0;
+}
+
+.file-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  overflow-y: auto;
+  min-width: 0;
+  padding-right: 0.3rem;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 400;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.file-name {
+  word-break: break-all;
+  color: #2a3f5f;
+}
+
+.no-files {
+  font-size: 0.83rem;
+  color: #aaa;
+  margin: 0;
+}
+
+.search-panel-with-files .search-panel {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Document Manager */
+.doc-manager-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.doc-manager-card {
+  background: #f7faff;
+  border: 1px solid #dbe3f8;
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.doc-manager-card h3 {
+  margin: 0 0 0.4rem 0;
+  font-size: 1rem;
+}
+
+.doc-manager-card p {
+  color: #586e8c;
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+}
+
+.doc-manager-status {
+  margin-top: 0.85rem;
+}
+
+.status-message {
+  color: #1a7a3c;
+  font-size: 0.9rem;
+}
+
+.error {
+  color: #a61b10;
+  font-size: 0.9rem;
+}
+
+/* Word cloud */
+.wordcloud-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.8rem;
+  align-items: center;
+  padding: 0.5rem;
+}
+
+.wordcloud-word {
+  display: inline-block;
+  line-height: 1.2;
+  cursor: default;
+  transition: opacity 0.15s;
+}
+
+.wordcloud-word:hover {
+  opacity: 0.75;
+}
+
+/* Results table */
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.results-table th {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  background: #eef3fb;
+  border-bottom: 2px solid #cdd8ee;
+  color: #3a5580;
+}
+
+.results-table td {
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid #edf1fb;
+}
+
+.results-table tr:hover td {
+  background: #f5f8ff;
+>>>>>>> Stashed changes
 }
