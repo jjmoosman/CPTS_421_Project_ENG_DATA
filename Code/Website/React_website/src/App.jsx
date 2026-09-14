@@ -274,14 +274,49 @@ function KeywordContextTool({ uploadedFiles }) {
   );
 }
 
+const PALETTE = [
+  { name: 'Yellow', light: '#fef9c3', medium: '#fde047', dark: '#ca8a04', darkText: '#fff' },
+  { name: 'Green',  light: '#dcfce7', medium: '#86efac', dark: '#16a34a', darkText: '#fff' },
+  { name: 'Blue',   light: '#dbeafe', medium: '#93c5fd', dark: '#2563eb', darkText: '#fff' },
+  { name: 'Pink',   light: '#fce7f3', medium: '#f9a8d4', dark: '#db2777', darkText: '#fff' },
+  { name: 'Purple', light: '#ede9fe', medium: '#c4b5fd', dark: '#7c3aed', darkText: '#fff' },
+  { name: 'Orange', light: '#ffedd5', medium: '#fdba74', dark: '#ea580c', darkText: '#fff' },
+  { name: 'Teal',   light: '#ccfbf1', medium: '#5eead4', dark: '#0d9488', darkText: '#fff' },
+  { name: 'Red',    light: '#fee2e2', medium: '#fca5a5', dark: '#dc2626', darkText: '#fff' },
+];
+
+const PENDING_STYLE = {
+  backgroundColor: '#fde68a',
+  border: '2px dashed #b45309',
+  color: '#1f2937',
+};
+
+// Three states: unselected (light, no border), tagActive (medium + dashed
+// border — this highlight belongs to the selected tag, but isn't the
+// specific location currently focused), locationActive (dark + dashed
+// border — this exact highlight is the one currently selected).
+function getMarkStyle(color, state) {
+  if (state === 'locationActive') {
+    return { backgroundColor: color.dark, color: color.darkText, border: `2px dashed ${color.light}` };
+  }
+  if (state === 'tagActive') {
+    return { backgroundColor: color.medium, color: '#1f2937', border: `2px dashed ${color.dark}` };
+  }
+  return { backgroundColor: color.light, color: '#1f2937', border: '2px solid transparent' };
+}
+
 function AnnotateTool({ uploadedFiles }) {
   const [selectedFileIds, setSelectedFileIds] = useState([]);
   const [sourceText, setSourceText] = useState('');
-  const [annotations, setAnnotations] = useState([]);
+  const [tags, setTags] = useState([]); // [{ id, note, color, ranges: [{id, start, end, selectedText}] }]
   const [newAnnotation, setNewAnnotation] = useState('');
   const [pendingSelection, setPendingSelection] = useState(null);
-  const [activeAnnotation, setActiveAnnotation] = useState(null);
+  const [activeTagId, setActiveTagId] = useState(null);
+  const [activeLocationId, setActiveLocationId] = useState(null);
+  const [hoverInfo, setHoverInfo] = useState(null); // { note, x, y }
   const textRef = useRef(null);
+  const docPanelRef = useRef(null);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     if (uploadedFiles && uploadedFiles.length > 0) {
@@ -292,9 +327,17 @@ function AnnotateTool({ uploadedFiles }) {
       setSelectedFileIds([]);
       setSourceText('');
     }
-    setAnnotations([]);
+    setTags([]);
     setPendingSelection(null);
+    setActiveTagId(null);
+    setActiveLocationId(null);
   }, [uploadedFiles]);
+
+  useEffect(() => {
+    if (pendingSelection) {
+      inputRef.current?.focus();
+    }
+  }, [pendingSelection]);
 
   const toggleFileSelection = (fileId) => {
     const newSelection = selectedFileIds.includes(fileId)
@@ -302,14 +345,24 @@ function AnnotateTool({ uploadedFiles }) {
       : [...selectedFileIds, fileId];
     setSelectedFileIds(newSelection);
     setSourceText(combineSelectedFiles(uploadedFiles, newSelection));
-    setAnnotations([]);
+    setTags([]);
     setPendingSelection(null);
+    setActiveTagId(null);
+    setActiveLocationId(null);
   };
 
-  const handleTextMouseUp = () => {
+  const clearActiveSelection = () => {
+    setActiveTagId(null);
+    setActiveLocationId(null);
+  };
+
+  const handleTextMouseUp = (e) => {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed) {
       setPendingSelection(null);
+      if (e.target === textRef.current || !e.target.closest('mark')) {
+        clearActiveSelection();
+      }
       return;
     }
     const range = selection.getRangeAt(0);
@@ -320,66 +373,227 @@ function AnnotateTool({ uploadedFiles }) {
     const selectedText = selection.toString();
     if (selectedText.length > 0) {
       setPendingSelection({ start, end: start + selectedText.length, selectedText });
+      clearActiveSelection();
     } else {
       setPendingSelection(null);
     }
   };
 
-  const addAnnotation = () => {
-    if (!newAnnotation.trim()) return;
-    setAnnotations(prev => [...prev, {
-      id: Date.now(),
-      start: pendingSelection?.start ?? null,
-      end: pendingSelection?.end ?? null,
-      selectedText: pendingSelection?.selectedText ?? null,
-      note: newAnnotation.trim(),
-    }]);
+  const commitRange = (tagId, noteText) => {
+    const range = pendingSelection
+      ? { id: Date.now() + Math.random(), start: pendingSelection.start, end: pendingSelection.end, selectedText: pendingSelection.selectedText }
+      : { id: Date.now() + Math.random(), start: null, end: null, selectedText: null };
+
+    setTags(prev => {
+      if (tagId) {
+        return prev.map(t => t.id === tagId ? { ...t, ranges: [...t.ranges, range] } : t);
+      }
+      const trimmed = noteText.trim();
+      const existing = prev.find(t => t.note.toLowerCase() === trimmed.toLowerCase());
+      if (existing) {
+        return prev.map(t => t.id === existing.id ? { ...t, ranges: [...t.ranges, range] } : t);
+      }
+      const color = PALETTE[prev.length % PALETTE.length];
+      const newTag = { id: Date.now() + Math.random(), note: trimmed, color, ranges: [range] };
+      return [...prev, newTag];
+    });
+
     setNewAnnotation('');
     setPendingSelection(null);
     window.getSelection()?.removeAllRanges();
   };
 
-  const deleteAnnotation = (id) => {
-    setAnnotations(prev => prev.filter(a => a.id !== id));
-    if (activeAnnotation?.id === id) setActiveAnnotation(null);
+  const addNewOrMatchingTag = () => {
+    if (!newAnnotation.trim()) return;
+    commitRange(null, newAnnotation);
+  };
+
+  const addToExistingTag = (tag) => {
+    commitRange(tag.id, tag.note);
+    setActiveTagId(tag.id);
+  };
+
+  const updateTagColor = (tagId, color) => {
+    setTags(prev => prev.map(t => t.id === tagId ? { ...t, color } : t));
+  };
+
+  const deleteRange = (tagId, rangeId) => {
+    setTags(prev => prev
+      .map(t => t.id === tagId ? { ...t, ranges: t.ranges.filter(r => r.id !== rangeId) } : t)
+      .filter(t => t.ranges.length > 0)
+    );
+    if (activeLocationId === rangeId) setActiveLocationId(null);
+  };
+
+  const deleteTag = (tagId) => {
+    setTags(prev => prev.filter(t => t.id !== tagId));
+    if (activeTagId === tagId) clearActiveSelection();
+  };
+
+  const jumpToLocation = (tagId, rangeId) => {
+    setPendingSelection(null);
+    setActiveTagId(tagId);
+    setActiveLocationId(rangeId);
+    // Use a data-attribute query rather than getElementById: a single range
+    // can be split across multiple <mark> segments (when something else
+    // overlaps it in the middle), so its id isn't guaranteed unique in the DOM.
+    const el = textRef.current?.querySelector(`mark[data-range-id="${rangeId}"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  const cycleLocation = (direction) => {
+    const tag = tags.find(t => t.id === activeTagId);
+    if (!tag) return;
+    const located = tag.ranges.filter(r => r.start !== null);
+    if (located.length === 0) return;
+    const currentIndex = located.findIndex(r => r.id === activeLocationId);
+    const nextIndex = currentIndex === -1
+      ? 0
+      : (currentIndex + direction + located.length) % located.length;
+    jumpToLocation(tag.id, located[nextIndex].id);
+  };
+
+  const toggleTagOpen = (tagId) => {
+    setPendingSelection(null);
+    setActiveTagId(prev => (prev === tagId ? null : tagId));
+    setActiveLocationId(null);
+  };
+
+  const handleMarkClick = (e, tagId, rangeId) => {
+    e.stopPropagation();
+    setPendingSelection(null);
+    if (activeTagId === tagId && activeLocationId === rangeId) {
+      clearActiveSelection();
+    } else {
+      setActiveTagId(tagId);
+      setActiveLocationId(rangeId);
+    }
+  };
+
+  const handleMarkMouseMove = (e, note) => {
+    const container = docPanelRef.current;
+    if (!container) return;
+    const containerRect = container.getBoundingClientRect();
+    setHoverInfo({
+      note,
+      x: e.clientX - containerRect.left + container.scrollLeft,
+      y: e.clientY - containerRect.top + container.scrollTop,
+    });
+  };
+
+  const handleMarkMouseLeave = () => setHoverInfo(null);
+
+  // Splits the text into non-overlapping segments and, for any segment
+  // covered by more than one range, picks exactly one "winner" to display —
+  // so overlapping annotations never duplicate the underlying text.
+  // Winner priority: in-progress pending selection > the specifically
+  // selected location > any location of the selected tag > most recently
+  // created range.
+  const buildRenderSegments = () => {
+    const flatRanges = tags.flatMap(t =>
+      t.ranges
+        .filter(r => r.start !== null)
+        .map(r => ({ ...r, tagId: t.id, note: t.note, color: t.color, isPending: false }))
+    );
+
+    if (pendingSelection) {
+      flatRanges.push({
+        id: 'pending',
+        tagId: null,
+        start: pendingSelection.start,
+        end: pendingSelection.end,
+        note: newAnnotation.trim() || 'New annotation…',
+        color: null,
+        isPending: true,
+      });
+    }
+
+    if (!flatRanges.length) return [{ text: sourceText, winner: null }];
+
+    const boundarySet = new Set([0, sourceText.length]);
+    flatRanges.forEach(r => { boundarySet.add(r.start); boundarySet.add(r.end); });
+    const boundaries = Array.from(boundarySet).sort((a, b) => a - b);
+
+    const rawSegments = [];
+    for (let i = 0; i < boundaries.length - 1; i++) {
+      const segStart = boundaries[i];
+      const segEnd = boundaries[i + 1];
+      if (segStart >= segEnd) continue;
+
+      const covering = flatRanges.filter(r => r.start <= segStart && r.end >= segEnd);
+      let winner = null;
+      if (covering.length) {
+        const scored = covering.map(r => {
+          let tier;
+          if (r.isPending) tier = 3;
+          else if (activeLocationId !== null && r.id === activeLocationId) tier = 2;
+          else if (activeTagId !== null && r.tagId === activeTagId) tier = 1;
+          else tier = 0;
+          return { r, tier };
+        });
+        scored.sort((a, b) => b.tier - a.tier || (b.r.id > a.r.id ? 1 : -1));
+        winner = scored[0].r;
+      }
+      rawSegments.push({ text: sourceText.slice(segStart, segEnd), winner, start: segStart, end: segEnd });
+    }
+
+    // Merge adjacent segments that share the same winning range, so a
+    // range that isn't interrupted by anything renders as a single <mark>.
+    const merged = [];
+    rawSegments.forEach(seg => {
+      const last = merged[merged.length - 1];
+      const segKey = seg.winner ? (seg.winner.isPending ? 'pending' : `${seg.winner.tagId}-${seg.winner.id}`) : null;
+      const lastKey = last?.winner ? (last.winner.isPending ? 'pending' : `${last.winner.tagId}-${last.winner.id}`) : null;
+      if (last && segKey === lastKey) {
+        last.text += seg.text;
+        last.end = seg.end;
+      } else {
+        merged.push({ ...seg });
+      }
+    });
+    return merged;
   };
 
   const renderAnnotatedText = () => {
-    if (!annotations.length) return <span>{sourceText}</span>;
-    const ranges = annotations
-      .filter(a => a.start !== null)
-      .sort((a, b) => a.start - b.start);
-    const parts = [];
-    let cursor = 0;
-    ranges.forEach((ann) => {
-      if (ann.start > cursor) {
-        parts.push(<span key={`text-${cursor}`}>{sourceText.slice(cursor, ann.start)}</span>);
+    const segments = buildRenderSegments();
+    return segments.map((seg, i) => {
+      if (!seg.winner) {
+        return <span key={`text-${i}`}>{seg.text}</span>;
       }
-      const isActive = activeAnnotation?.id === ann.id;
-      parts.push(
+      if (seg.winner.isPending) {
+        return (
+          <mark key={`mark-pending-${i}`} className="annotate-highlight pending" style={PENDING_STYLE}>
+            {seg.text}
+          </mark>
+        );
+      }
+      const r = seg.winner;
+      const isActiveTag = activeTagId === r.tagId;
+      const isActiveLocation = activeLocationId === r.id;
+      const state = isActiveLocation ? 'locationActive' : isActiveTag ? 'tagActive' : 'unselected';
+      return (
         <mark
-          key={`mark-${ann.id}`}
-          onClick={() => setActiveAnnotation(isActive ? null : ann)}
-          className={`annotate-highlight${isActive ? ' active' : ''}`}
-          title={ann.note}
+          key={`mark-${r.id}-${i}`}
+          data-tag-id={r.tagId}
+          data-range-id={r.id}
+          onClick={(e) => handleMarkClick(e, r.tagId, r.id)}
+          onMouseMove={(e) => handleMarkMouseMove(e, r.note)}
+          onMouseLeave={handleMarkMouseLeave}
+          className="annotate-highlight"
+          style={getMarkStyle(r.color, state)}
         >
-          {sourceText.slice(ann.start, ann.end)}
+          {seg.text}
         </mark>
       );
-      cursor = Math.max(cursor, ann.end);
     });
-    if (cursor < sourceText.length) {
-      parts.push(<span key="text-end">{sourceText.slice(cursor)}</span>);
-    }
-    return parts;
   };
 
   return (
-    <ToolPage title="Annotate" subtitle="Highlight text then add an annotation, or annotate the document generally.">
+    <ToolPage title="Annotate" subtitle="Highlight text then tag it — reuse a tag across multiple sections.">
       <div className="search-panel-with-files">
         <FileSidebar uploadedFiles={uploadedFiles} selectedFileIds={selectedFileIds} onToggle={toggleFileSelection} />
         <div className="annotate-main">
-          <div className="annotate-doc-panel">
+          <div className="annotate-doc-panel" ref={docPanelRef} style={{ position: 'relative' }}>
             <label>Document text</label>
             <div
               ref={textRef}
@@ -391,6 +605,24 @@ function AnnotateTool({ uploadedFiles }) {
                 : <span className="no-files">No files selected. Upload files in Document Manager.</span>
               }
             </div>
+            {hoverInfo && (
+              <div
+                className="annotate-hover-tooltip"
+                style={{
+                  position: 'absolute',
+                  left: hoverInfo.x,
+                  top: hoverInfo.y - 12,
+                  transform: 'translate(-50%, -100%)',
+                  pointerEvents: 'none',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  backgroundColor: '#15253e',
+                  color: 'white',
+                }}
+              >
+                {hoverInfo.note}
+              </div>
+            )}
           </div>
 
           <div className="annotate-controls">
@@ -403,42 +635,137 @@ function AnnotateTool({ uploadedFiles }) {
 
             <div className="annotate-input-row">
               <input
+                ref={inputRef}
                 value={newAnnotation}
                 onChange={(e) => setNewAnnotation(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addAnnotation()}
-                placeholder="Enter annotation..."
+                onKeyDown={(e) => e.key === 'Enter' && addNewOrMatchingTag()}
+                placeholder="Tag name"
               />
-              <button className="run-search" type="button" onClick={addAnnotation}>Add</button>
+              <button className="run-search" type="button" onClick={addNewOrMatchingTag}>Add</button>
             </div>
 
+            {pendingSelection && tags.length > 0 && (
+              <div className="annotate-existing-tags">
+                <div className="annotate-existing-tags-label">
+                  Or add selection to an existing tag:
+                </div>
+                <div className="annotate-tag-chips">
+                  {tags.map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className="annotate-tag-chip"
+                      onClick={() => addToExistingTag(t)}
+                      style={{ borderLeft: `4px solid ${t.color.dark}` }}
+                    >
+                      {t.note} ({t.ranges.length})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="annotate-list-header">
-              <h3>Annotations ({annotations.length})</h3>
-              {annotations.length === 0 && <p className="annotate-selection-status empty">No annotations yet.</p>}
+              <h3>Tags ({tags.length})</h3>
+              {tags.length === 0 && <p className="annotate-selection-status empty">No annotations yet.</p>}
               <ul className="annotate-list">
-                {annotations.map((ann) => (
-                <li
-                  key={ann.id}
-                  onClick={() => setActiveAnnotation(activeAnnotation?.id === ann.id ? null : ann)}
-                  className={`annotate-list-item${activeAnnotation?.id === ann.id ? ' active' : ''}`}
-                >
-                  <div className="annotate-item-note">{ann.note}</div>
-                  {ann.selectedText
-                    ? <div className="annotate-item-excerpt">↳ "{ann.selectedText.slice(0, 80)}{ann.selectedText.length > 80 ? '…' : ''}"</div>
-                    : <div className="annotate-item-excerpt general">General annotation</div>
-                  }
-                  <button
-                    className="annotate-item-delete"
-                    onClick={(e) => { e.stopPropagation(); deleteAnnotation(ann.id); }}
-                  >
-                    Delete
-                  </button>
-                </li>
-              ))}
-            </ul>
+                {tags.map((tag) => {
+                  const isOpen = activeTagId === tag.id;
+                  const locatedRanges = tag.ranges.filter(r => r.start !== null);
+                  const generalRanges = tag.ranges.filter(r => r.start === null);
+                  return (
+                    <li
+                      key={tag.id}
+                      className={`annotate-list-item${isOpen ? ' active' : ''}`}
+                      onClick={() => toggleTagOpen(tag.id)}
+                      style={{ borderLeft: `4px solid ${tag.color.dark}` }}
+                    >
+                      <div className="annotate-item-note">
+                        <span
+                          className="annotate-color-dot"
+                          style={{
+                            display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
+                            backgroundColor: tag.color.dark, marginRight: 6,
+                          }}
+                        />
+                        {tag.note}
+                        <span className="annotate-tag-count"> — {tag.ranges.length} location{tag.ranges.length !== 1 ? 's' : ''}</span>
+                      </div>
+                      <button
+                        className="annotate-item-delete"
+                        onClick={(e) => { e.stopPropagation(); deleteTag(tag.id); }}
+                      >
+                        Delete tag
+                      </button>
+
+                      {isOpen && (
+                        <div className="annotate-tag-locations" onClick={(e) => e.stopPropagation()}>
+                          <div className="annotate-color-picker">
+                            <span className="annotate-color-picker-label">Color:</span>
+                            {PALETTE.map(c => (
+                              <button
+                                key={c.name}
+                                type="button"
+                                title={c.name}
+                                onClick={() => updateTagColor(tag.id, c)}
+                                className={`annotate-color-swatch${tag.color.name === c.name ? ' selected' : ''}`}
+                                style={{
+                                  backgroundColor: c.dark,
+                                  width: 18, height: 18, borderRadius: '50%',
+                                  border: tag.color.name === c.name ? '2px solid #1f2937' : '1px solid #d1d5db',
+                                  marginRight: 4, cursor: 'pointer',
+                                }}
+                              />
+                            ))}
+                          </div>
+
+                          {locatedRanges.length > 0 && (
+                            <div className="annotate-find-controls">
+                              <button type="button" onClick={() => cycleLocation(-1)}>↑ Prev</button>
+                              <span>
+                                {locatedRanges.findIndex(r => r.id === activeLocationId) + 1 || '-'} / {locatedRanges.length}
+                              </span>
+                              <button type="button" onClick={() => cycleLocation(1)}>Next ↓</button>
+                            </div>
+                          )}
+                          <ul>
+                            {locatedRanges.map(r => (
+                              <li
+                                key={r.id}
+                                className={`annotate-item-excerpt${activeLocationId === r.id ? ' current' : ''}`}
+                                onClick={() => jumpToLocation(tag.id, r.id)}
+                              >
+                                "{r.selectedText.slice(0, 80)}{r.selectedText.length > 80 ? '…' : ''}"
+                                <button
+                                  className="annotate-item-delete"
+                                  onClick={(e) => { e.stopPropagation(); deleteRange(tag.id, r.id); }}
+                                >
+                                  Remove
+                                </button>
+                              </li>
+                            ))}
+                            {generalRanges.map(r => (
+                              <li key={r.id} className="annotate-item-excerpt general">
+                                General annotation
+                                <button
+                                  className="annotate-item-delete"
+                                  onClick={(e) => { e.stopPropagation(); deleteRange(tag.id, r.id); }}
+                                >
+                                  Remove
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           </div>
         </div>
       </div>
-    </div>
     </ToolPage>
   );
 }
