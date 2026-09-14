@@ -3,7 +3,13 @@ name: Build Executables
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]          # tag push -> builds AND publishes a release
   workflow_dispatch:
+
+# cancel superseded runs on rapid pushes
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -13,73 +19,61 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # macos-latest = Apple Silicon (arm64). Use macos-13 for Intel Macs.
         os: [windows-latest, macos-latest]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ✅ Unified Python setup (works on BOTH OS)
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'pip'
+          cache-dependency-path: requirements-build.txt
 
-      # ✅ Create virtual environment (cross-platform)
-      - name: Create virtual environment
-        shell: bash
-        run: |
-          python -m venv venv
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            source venv/Scripts/activate
-          else
-            source venv/bin/activate
-          fi
-          python -m pip install --upgrade pip
-
-      # ✅ Install dependencies
       - name: Install dependencies
         shell: bash
         run: |
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            source venv/Scripts/activate
-          else
-            source venv/bin/activate
-            brew install create-dmg
-          fi
+          python -m pip install --upgrade pip
+          pip install -r requirements-build.txt
 
-          pip install pyinstaller PyQt6 pandas rapidfuzz pymupdf python-docx openpyxl numpy
+      - name: Install create-dmg
+        if: runner.os == 'macOS'
+        run: brew install create-dmg
 
-      # ✅ Build with PyInstaller
-      - name: Build with PyInstaller
+      # Windows: single .exe is fine, startup cost is low
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
         shell: bash
         working-directory: ./code/TestApp
         run: |
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            source ../../venv/Scripts/activate
-          else
-            source ../../venv/bin/activate
-            export MACOSX_DEPLOYMENT_TARGET=11.0
-          fi
-
           pyinstaller --onefile --windowed \
             --name "FERPA_Redactor" \
-            --collect-all pandas \
-            --collect-all numpy \
-            --collect-all rapidfuzz \
-            --collect-all PyQt6 \
             --hidden-import=PyQt6.sip \
             app.py
 
-      # ✅ Create macOS DMG
+      # macOS: onedir so the .app doesn't unpack to /tmp on every launch
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        working-directory: ./code/TestApp
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+        run: |
+          pyinstaller --onedir --windowed \
+            --name "FERPA_Redactor" \
+            --hidden-import=PyQt6.sip \
+            app.py
+
       - name: Create macOS DMG
-        if: matrix.os == 'macos-latest'
+        if: runner.os == 'macOS'
         shell: bash
         run: |
           mkdir -p dmg_root
-          cp -r code/TestApp/dist/FERPA_Redactor.app dmg_root/
+          cp -R code/TestApp/dist/FERPA_Redactor.app dmg_root/
           chmod +x "dmg_root/FERPA_Redactor.app/Contents/MacOS/FERPA_Redactor"
-
           create-dmg \
             --volname "FERPA Redactor Installer" \
             --window-pos 200 120 \
@@ -91,18 +85,49 @@ jobs:
             "FERPA_Redactor_Mac.dmg" \
             "dmg_root/"
 
-      # ✅ Upload Windows artifact
-      - name: Upload Windows Artifact
-        if: matrix.os == 'windows-latest'
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: FERPA-Tool-Windows
-          path: code/TestApp/dist/*.exe
+          path: code/TestApp/dist/FERPA_Redactor.exe
+          if-no-files-found: error
 
-      # ✅ Upload macOS artifact
-      - name: Upload Mac Artifact
-        if: matrix.os == 'macos-latest'
+      - name: Upload macOS artifact
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: FERPA-Tool-MacOS-Installer
           path: FERPA_Redactor_Mac.dmg
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # required to create the release
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/FERPA-Tool-Windows/FERPA_Redactor.exe
+            artifacts/FERPA-Tool-MacOS-Installer/FERPA_Redactor_Mac.dmg
+          generate_release_notes: true
+          body: |
+            ## Install
+
+            **Windows** — download `FERPA_Redactor.exe` and run it.
+            SmartScreen may warn on first launch: click **More info -> Run anyway**.
+
+            **macOS** — download `FERPA_Redactor_Mac.dmg`, open it, drag the app to Applications.
+            On first launch, **right-click the app -> Open** (a plain double-click will be
+            blocked, since the app isn't notarized by Apple).
