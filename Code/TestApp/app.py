@@ -210,13 +210,29 @@ class RedactorApp(QMainWindow):
     # Adds new files to the selected files list without duplicates.
     # Updates the label showing the count and sets a default output directory if needed.
     def add_to_selected_files(self, new_files):
-        combined = set(self.selected_files) | set(new_files)
+        allowed_extensions = {".txt", ".pdf", ".docx"}
+
+        # Ignore files that are not TXT, PDF, or DOCX
+        valid_files = [
+            f for f in new_files
+            if Path(f).suffix.lower() in allowed_extensions
+        ]
+
+        # Add only supported files without duplicates
+        combined = set(self.selected_files) | set(valid_files)
         self.selected_files = list(combined)
-        self.file_list_label.setText(f"Total files selected: {len(self.selected_files)}")
+
+        self.file_list_label.setText(
+            f"Total files selected: {len(self.selected_files)}"
+        )
         
         if not self.output_dir and self.selected_files:
-            self.temp_output_dir = Path(self.selected_files[0]).parent / "Redacted_Output"
-            self.selected_destination_label.setText(f"Default: {self.temp_output_dir}")
+            self.temp_output_dir = (
+                Path(self.selected_files[0]).parent / "Redacted_Output"
+            )
+            self.selected_destination_label.setText(
+                f"Default: {self.temp_output_dir}"
+            )
 
     # Clears the list of selected files and resets the label.
     def clear_selection(self):
@@ -524,7 +540,8 @@ class RedactorApp(QMainWindow):
         except Exception as e:
             raise RuntimeError(f"Unable to verify text output: {e}")
 
-        found = [term for term in self.blacklisted_terms if term.lower() in content]
+        # match whole words only, same as fuzzy_replace
+        found = [t for t in self.blacklisted_terms if re.search(rf'(?<!\w){re.escape(t.lower())}(?!\w)', content)]
         if found:
             raise RuntimeError(f"Verification failed. Unredacted terms found in text output: {', '.join(sorted(set(found)))}")
 
