@@ -1330,15 +1330,6 @@ function DocumentManager({ setUploadedFiles }) {
   );
 }
 
-function Courses() {
-  return (
-    <section className="page-content">
-      <h1>Courses</h1>
-      <p>This view is reserved for course management details.</p>
-    </section>
-  );
-}
-
 export default function App() {
   const [uploadedFiles, setUploadedFiles] = useState([]);
 
@@ -1351,9 +1342,7 @@ export default function App() {
           <NavLink to="/document-manager" className={({ isActive }) => (isActive ? 'active' : '')}>Document Manager</NavLink>
           <NavLink to="/keyword-context" className={({ isActive }) => (isActive ? 'active' : '')}>Keyword in Context</NavLink>
           <NavLink to="/annotate" className={({ isActive }) => (isActive ? 'active' : '')}>Annotate</NavLink>
-          <NavLink to="/data-visualization" className={({ isActive }) => (isActive ? 'active' : '')}>Data Visualization</NavLink>
-          <NavLink to="/courses" className={({ isActive }) => (isActive ? 'active' : '')}>Courses</NavLink>
-        </nav>
+          <NavLink to="/data-visualization" className={({ isActive }) => (isActive ? 'active' : '')}>Data Visualization</NavLink>        </nav>
       </aside>
       <main className="main-content">
         <header className="page-header">
@@ -1366,9 +1355,7 @@ export default function App() {
           <Route path="/document-manager" element={<DocumentManager setUploadedFiles={setUploadedFiles} />} />
           <Route path="/keyword-context" element={<KeywordContextTool uploadedFiles={uploadedFiles} />} />
           <Route path="/annotate" element={<AnnotateTool uploadedFiles={uploadedFiles} />} />
-          <Route path="/data-visualization" element={<DataVisualizationTool uploadedFiles={uploadedFiles} />} />
-          <Route path="/courses" element={<Courses />} />
-          <Route path="*" element={<h2>Page not found</h2>} />
+          <Route path="/data-visualization" element={<DataVisualizationTool uploadedFiles={uploadedFiles} />} />          <Route path="*" element={<h2>Page not found</h2>} />
         </Routes>
       </main>
     </div>
