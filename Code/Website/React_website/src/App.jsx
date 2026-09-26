@@ -5,7 +5,7 @@ import './App.css';
 
 const tools = [
   {
-    name: 'Keyword & Context',
+    name: 'Keyword in Context',
     route: '/keyword-context',
     description: 'Search terms in documents, highlight matches, and show surrounding context.'
   },
@@ -110,81 +110,148 @@ function FileSidebar({ uploadedFiles, selectedFileIds, onToggle }) {
 }
 
 // KWIC (Keyword in Context) concordance tool, modeled after AntConc's Concordance view.
-function KeywordContextTool({ uploadedFiles }) {
-  const [selectedFileIds, setSelectedFileIds] = useState([]);
-  const [query, setQuery] = useState('');
-  const [isRegex, setIsRegex] = useState(false);
-  const [caseSensitive, setCaseSensitive] = useState(false);
-  const [contextWords, setContextWords] = useState(5);
-  const [results, setResults] = useState([]);
-  const [error, setError] = useState('');
-  const [sortBy, setSortBy] = useState('position');
-  const [sortDir, setSortDir] = useState('asc');
+const KWIC_MAX_CONTEXT = 20;       // upper bound for the "Context words" input
+const KWIC_CONTEXT_CHARS = 400;    // characters scanned on each side of a hit (enough for 20 words)
+const KWIC_EXPANDED_CHARS = 600;   // characters shown on each side when a row is expanded
+const KWIC_MAX_HITS = 50000;       // stop collecting after this many hits
+const KWIC_PAGE_SIZE = 500;        // rows rendered at a time
 
-  useEffect(() => {
-    if (uploadedFiles && uploadedFiles.length > 0) {
-      setSelectedFileIds(uploadedFiles.map(f => f.id));
-    } else {
-      setSelectedFileIds([]);
+// Survives navigating away from the page and back (but not a reload).
+const kwicCache = {};
+
+function usePersistentState(key, initial) {
+  const [value, setValue] = useState(() => (key in kwicCache ? kwicCache[key] : initial));
+  useEffect(() => { kwicCache[key] = value; }, [key, value]);
+  return [value, setValue];
+}
+
+// Lowercase and strip surrounding punctuation so "man," and "man" sort together.
+function normalizeWord(word) {
+  return (word || '').toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+}
+
+function findKwicHits(files, regexp) {
+  const hits = [];
+  let truncated = false;
+  files.forEach((file, fileIndex) => {
+    const text = file.content || '';
+    regexp.lastIndex = 0;
+    let match;
+    while ((match = regexp.exec(text)) !== null) {
+      if (hits.length >= KWIC_MAX_HITS) { truncated = true; break; }
+      const start = match.index;
+      const end = start + match[0].length;
+      const leftFrom = Math.max(0, start - KWIC_CONTEXT_CHARS);
+      const rightTo = Math.min(text.length, end + KWIC_CONTEXT_CHARS);
+      const leftWords = text.slice(leftFrom, start).split(/\s+/).filter(Boolean);
+      const rightWords = text.slice(end, rightTo).split(/\s+/).filter(Boolean);
+      // The window edges may cut a word in half; drop those partial words.
+      if (leftFrom > 0 && leftWords.length > KWIC_MAX_CONTEXT) leftWords.shift();
+      if (rightTo < text.length && rightWords.length > KWIC_MAX_CONTEXT) rightWords.pop();
+      hits.push({
+        id: hits.length,
+        fileId: file.id,
+        fileName: file.name,
+        fileIndex,
+        start,
+        end,
+        keyword: match[0],
+        leftWords: leftWords.slice(-KWIC_MAX_CONTEXT),
+        rightWords: rightWords.slice(0, KWIC_MAX_CONTEXT),
+      });
+      if (match[0].length === 0) regexp.lastIndex += 1;
     }
-    setResults([]);
-  }, [uploadedFiles]);
+  });
+  return { hits, truncated };
+}
 
-  const sourceText = combineSelectedFiles(uploadedFiles, selectedFileIds);
+function csvCell(value) {
+  const s = String(value ?? '');
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function KeywordContextTool({ uploadedFiles }) {
+  const [filesRef, setFilesRef] = usePersistentState('filesRef', null);
+  const [selectedFileIds, setSelectedFileIds] = usePersistentState('selectedFileIds', []);
+  const [query, setQuery] = usePersistentState('query', '');
+  const [isRegex, setIsRegex] = usePersistentState('isRegex', false);
+  const [caseSensitive, setCaseSensitive] = usePersistentState('caseSensitive', false);
+  const [wholeWord, setWholeWord] = usePersistentState('wholeWord', false);
+  const [contextInput, setContextInput] = usePersistentState('contextInput', '5');
+  const [results, setResults] = usePersistentState('results', []);
+  const [message, setMessage] = usePersistentState('message', null); // { kind: 'error' | 'info', text }
+  const [sortBy, setSortBy] = usePersistentState('sortBy', 'position');
+  const [sortDir, setSortDir] = usePersistentState('sortDir', 'asc');
+  const [visibleCount, setVisibleCount] = useState(KWIC_PAGE_SIZE);
+  const [expandedId, setExpandedId] = useState(null);
+
+  // Reset only when the loaded files actually change, not on every visit to the page.
+  useEffect(() => {
+    if (filesRef === uploadedFiles) return;
+    setFilesRef(uploadedFiles);
+    setSelectedFileIds((uploadedFiles || []).map(f => f.id));
+    setResults([]);
+    setMessage(null);
+  }, [uploadedFiles]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const contextWords = Math.max(1, Math.min(KWIC_MAX_CONTEXT, Number(contextInput) || 1));
+  const multiFile = new Set(results.map(r => r.fileId)).size > 1 || selectedFileIds.length > 1;
+
+  const clearResults = () => {
+    setResults([]);
+    setMessage(null);
+    setExpandedId(null);
+  };
 
   const toggleFileSelection = (fileId) => {
     setSelectedFileIds(prev =>
       prev.includes(fileId) ? prev.filter(id => id !== fileId) : [...prev, fileId]
     );
-    setResults([]);
+    clearResults();
   };
 
   const runSearch = () => {
-    setError('');
-    if (!query.trim()) { setResults([]); return; }
-    if (!sourceText) { setError('No files selected.'); return; }
+    clearResults();
+    setVisibleCount(KWIC_PAGE_SIZE);
+    if (!query.trim()) return;
+    const files = (uploadedFiles || []).filter(f => selectedFileIds.includes(f.id));
+    if (files.length === 0) { setMessage({ kind: 'error', text: 'No files selected.' }); return; }
+    let regexp;
     try {
-      const flags = caseSensitive ? 'g' : 'gi';
-      const pattern = isRegex ? query : escapeRegExp(query);
-      const regexp = new RegExp(pattern, flags);
-      const found = [];
-      let match;
-      while ((match = regexp.exec(sourceText)) !== null) {
-        const start = match.index;
-        const end = start + match[0].length;
-        const leftWords = sourceText.slice(0, start).split(/\s+/).filter(Boolean);
-        const rightWords = sourceText.slice(end).split(/\s+/).filter(Boolean);
-        found.push({
-          id: found.length,
-          position: start,
-          keyword: match[0],
-          left: leftWords.slice(-contextWords).join(' '),
-          right: rightWords.slice(0, contextWords).join(' '),
-          leftWords,
-          rightWords,
-        });
-        if (match[0].length === 0) regexp.lastIndex += 1;
-      }
-      setResults(found);
-      if (found.length === 0) setError('No matches found.');
+      let pattern = isRegex ? query : escapeRegExp(query);
+      if (wholeWord) pattern = `(?<!\\w)(?:${pattern})(?!\\w)`;
+      regexp = new RegExp(pattern, caseSensitive ? 'gm' : 'gim');
     } catch (e) {
-      setResults([]);
-      setError('Invalid regex: ' + e.message);
+      setMessage({ kind: 'error', text: 'Invalid regex: ' + e.message });
+      return;
     }
+    const { hits, truncated } = findKwicHits(files, regexp);
+    setResults(hits);
+    if (hits.length === 0) setMessage({ kind: 'info', text: 'No matches found.' });
+    else if (truncated) setMessage({ kind: 'info', text: `Showing the first ${KWIC_MAX_HITS.toLocaleString()} hits. Narrow your search to see the rest.` });
   };
 
   const wordAt = (words, n) =>
-    n > 0 ? words[n - 1]?.toLowerCase() || '' : words[words.length + n]?.toLowerCase() || '';
+    normalizeWord(n > 0 ? words[n - 1] : words[words.length + n]);
+
+  const sortKey = (item) => {
+    switch (sortBy) {
+      case 'file': return item.fileName.toLowerCase();
+      case 'keyword': return item.keyword.toLowerCase();
+      case '1L': return wordAt(item.leftWords, -1);
+      case '2L': return wordAt(item.leftWords, -2);
+      case '1R': return wordAt(item.rightWords, 1);
+      case '2R': return wordAt(item.rightWords, 2);
+      default: return null;
+    }
+  };
 
   const sortedResults = [...results].sort((a, b) => {
-    let va, vb;
-    if (sortBy === 'position') { va = a.position; vb = b.position; }
-    else if (sortBy === 'keyword') { va = a.keyword.toLowerCase(); vb = b.keyword.toLowerCase(); }
-    else if (sortBy === '1L') { va = wordAt(a.leftWords, -1); vb = wordAt(b.leftWords, -1); }
-    else if (sortBy === '2L') { va = wordAt(a.leftWords, -2); vb = wordAt(b.leftWords, -2); }
-    else if (sortBy === '1R') { va = wordAt(a.rightWords, 1); vb = wordAt(b.rightWords, 1); }
-    else if (sortBy === '2R') { va = wordAt(a.rightWords, 2); vb = wordAt(b.rightWords, 2); }
-    const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+    const ka = sortKey(a);
+    const kb = sortKey(b);
+    let cmp = ka === null ? 0 : ka.localeCompare(kb);
+    // Ties (and "position" sort) fall back to document order.
+    if (cmp === 0) cmp = a.fileIndex - b.fileIndex || a.start - b.start;
     return sortDir === 'asc' ? cmp : -cmp;
   });
 
@@ -193,8 +260,57 @@ function KeywordContextTool({ uploadedFiles }) {
     else { setSortBy(col); setSortDir('asc'); }
   };
 
+  const sortColumns = ['position', ...(multiFile ? ['file'] : []), '2L', '1L', 'keyword', '1R', '2R'];
+  const sortLabel = (col) => ({ position: '#', file: 'File', keyword: 'Keyword' }[col] || col);
+
+  const exportCsv = () => {
+    const rows = [['#', 'File', 'Left context', 'Keyword', 'Right context']];
+    sortedResults.forEach((item, idx) => {
+      rows.push([
+        idx + 1,
+        item.fileName,
+        item.leftWords.slice(-contextWords).join(' '),
+        item.keyword,
+        item.rightWords.slice(0, contextWords).join(' '),
+      ]);
+    });
+    const csv = rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `kwic-${query.replace(/[^\w-]+/g, '_').slice(0, 40) || 'results'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const expandedContext = (item) => {
+    const file = (uploadedFiles || []).find(f => f.id === item.fileId);
+    const text = file?.content || '';
+    const from = Math.max(0, item.start - KWIC_EXPANDED_CHARS);
+    const to = Math.min(text.length, item.end + KWIC_EXPANDED_CHARS);
+    return {
+      before: (from > 0 ? '…' : '') + text.slice(from, item.start),
+      keyword: text.slice(item.start, item.end),
+      after: text.slice(item.end, to) + (to < text.length ? '…' : ''),
+    };
+  };
+
+  // Summary: hits per file and distinct matched forms.
+  const perFile = {};
+  const forms = {};
+  results.forEach(r => {
+    perFile[r.fileName] = (perFile[r.fileName] || 0) + 1;
+    const form = caseSensitive ? r.keyword : r.keyword.toLowerCase();
+    forms[form] = (forms[form] || 0) + 1;
+  });
+  const formList = Object.entries(forms).sort((a, b) => b[1] - a[1]);
+
+  const columnCount = multiFile ? 5 : 4;
+  const visibleResults = sortedResults.slice(0, visibleCount);
+
   return (
-    <ToolPage title="Keyword in Context (KWIC)" subtitle="Concordance view — each match is centered with surrounding context. Click sort buttons to reorder.">
+    <ToolPage title="Keyword in Context (KWIC)" subtitle="Concordance view — each match is centered with surrounding context. Click sort buttons to reorder, or click a row to see more of the text.">
       <div className="search-panel-with-files">
         <FileSidebar uploadedFiles={uploadedFiles} selectedFileIds={selectedFileIds} onToggle={toggleFileSelection} />
         <div className="search-panel">
@@ -202,6 +318,7 @@ function KeywordContextTool({ uploadedFiles }) {
             <label>
               Search query
               <input
+                type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && runSearch()}
@@ -213,59 +330,133 @@ function KeywordContextTool({ uploadedFiles }) {
               <input
                 type="number"
                 min={1}
-                max={20}
-                value={contextWords}
-                onChange={(e) => setContextWords(Math.max(1, Math.min(20, Number(e.target.value))))}
+                max={KWIC_MAX_CONTEXT}
+                value={contextInput}
+                onChange={(e) => setContextInput(e.target.value)}
+                onBlur={() => setContextInput(String(contextWords))}
                 style={{ width: '4.5rem' }}
               />
             </label>
-            <label>
+            <label className="kwic-check">
               <input type="checkbox" checked={isRegex} onChange={(e) => setIsRegex(e.target.checked)} />
               Use regex
             </label>
-            <label>
+            <label className="kwic-check">
               <input type="checkbox" checked={caseSensitive} onChange={(e) => setCaseSensitive(e.target.checked)} />
               Case sensitive
+            </label>
+            <label className="kwic-check">
+              <input type="checkbox" checked={wholeWord} onChange={(e) => setWholeWord(e.target.checked)} />
+              Whole word
             </label>
             <button className="run-search" onClick={runSearch} type="button">Search</button>
           </div>
 
           <div className="kwic-results">
             <div className="kwic-header">
-              <h3>Concordance — {results.length} hit{results.length !== 1 ? 's' : ''}</h3>
+              <h3>Concordance — {results.length.toLocaleString()} hit{results.length !== 1 ? 's' : ''}</h3>
               {results.length > 0 && (
-                <div className="kwic-sort-row">
-                  <span>Sort:</span>
-                  {['position', '2L', '1L', 'keyword', '1R', '2R'].map(col => (
-                    <button
-                      key={col}
-                      onClick={() => toggleSort(col)}
-                      className={`kwic-sort-btn${sortBy === col ? ' active' : ''}`}
-                      type="button"
-                    >
-                      {col === 'position' ? '#' : col}
-                      {sortBy === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div className="kwic-sort-row">
+                    <span>Sort:</span>
+                    {sortColumns.map(col => (
+                      <button
+                        key={col}
+                        onClick={() => toggleSort(col)}
+                        className={`kwic-sort-btn${sortBy === col ? ' active' : ''}`}
+                        type="button"
+                      >
+                        {sortLabel(col)}
+                        {sortBy === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                      </button>
+                    ))}
+                  </div>
+                  <button className="kwic-sort-btn kwic-export" onClick={exportCsv} type="button">Export CSV</button>
+                </>
               )}
             </div>
-            {error && <div className="error">{error}</div>}
+
+            {message && <div className={message.kind === 'error' ? 'error' : 'kwic-info'}>{message.text}</div>}
+
+            {results.length > 0 && (
+              <details className="kwic-summary">
+                <summary>
+                  {Object.keys(perFile).length} file{Object.keys(perFile).length !== 1 ? 's' : ''} · {formList.length} distinct form{formList.length !== 1 ? 's' : ''}
+                </summary>
+                <div className="kwic-summary-body">
+                  <div>
+                    <h4>Hits per file</h4>
+                    <ul>
+                      {Object.entries(perFile).map(([name, count]) => (
+                        <li key={name}><span>{name}</span><span>{count}</span></li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <h4>Matched forms</h4>
+                    <ul>
+                      {formList.slice(0, 50).map(([form, count]) => (
+                        <li key={form}><span>{form}</span><span>{count}</span></li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </details>
+            )}
+
             {results.length > 0 && (
               <div className="kwic-table-wrap">
                 <table className="kwic-table">
+                  <thead>
+                    <tr>
+                      <th className="kwic-num">#</th>
+                      {multiFile && <th>File</th>}
+                      <th className="kwic-left">Left context</th>
+                      <th className="kwic-keyword">Keyword</th>
+                      <th className="kwic-right">Right context</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {sortedResults.map((item, idx) => (
-                      <tr key={item.id}>
-                        <td className="kwic-num">{idx + 1}</td>
-                        <td className="kwic-left">{item.left}</td>
-                        <td className="kwic-keyword">{item.keyword}</td>
-                        <td className="kwic-right">{item.right}</td>
-                      </tr>
+                    {visibleResults.map((item, idx) => (
+                      <React.Fragment key={item.id}>
+                        <tr
+                          className={`kwic-row${expandedId === item.id ? ' expanded' : ''}`}
+                          onClick={() => setExpandedId(id => id === item.id ? null : item.id)}
+                        >
+                          <td className="kwic-num">{idx + 1}</td>
+                          {multiFile && <td className="kwic-file" title={item.fileName}>{item.fileName}</td>}
+                          <td className="kwic-left"><span>{item.leftWords.slice(-contextWords).join(' ')}</span></td>
+                          <td className="kwic-keyword">{item.keyword}</td>
+                          <td className="kwic-right">{item.rightWords.slice(0, contextWords).join(' ')}</td>
+                        </tr>
+                        {expandedId === item.id && (() => {
+                          const ctx = expandedContext(item);
+                          return (
+                            <tr className="kwic-expanded">
+                              <td colSpan={columnCount}>
+                                <div className="kwic-expanded-meta">{item.fileName} · character {item.start.toLocaleString()}</div>
+                                <div className="kwic-expanded-text">
+                                  {ctx.before}<mark>{ctx.keyword}</mark>{ctx.after}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })()}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
               </div>
+            )}
+
+            {sortedResults.length > visibleCount && (
+              <button
+                className="kwic-sort-btn kwic-more"
+                type="button"
+                onClick={() => setVisibleCount(c => c + KWIC_PAGE_SIZE)}
+              >
+                Show more ({(sortedResults.length - visibleCount).toLocaleString()} remaining)
+              </button>
             )}
           </div>
         </div>
@@ -1158,7 +1349,7 @@ export default function App() {
         <nav>
           <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'active' : '')}>Dashboard</NavLink>
           <NavLink to="/document-manager" className={({ isActive }) => (isActive ? 'active' : '')}>Document Manager</NavLink>
-          <NavLink to="/keyword-context" className={({ isActive }) => (isActive ? 'active' : '')}>Keyword & Context</NavLink>
+          <NavLink to="/keyword-context" className={({ isActive }) => (isActive ? 'active' : '')}>Keyword in Context</NavLink>
           <NavLink to="/annotate" className={({ isActive }) => (isActive ? 'active' : '')}>Annotate</NavLink>
           <NavLink to="/data-visualization" className={({ isActive }) => (isActive ? 'active' : '')}>Data Visualization</NavLink>
           <NavLink to="/courses" className={({ isActive }) => (isActive ? 'active' : '')}>Courses</NavLink>
