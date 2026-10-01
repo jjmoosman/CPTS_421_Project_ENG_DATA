@@ -7,26 +7,17 @@
  * De-identification tool bug fixes/patches
 
 ## Work Summary (Developer Facing)
-This sprint focused on the building of most of the website’s functions and patching any bugs in the de-identification tool.
+This sprint focused on the building of most of the websiteâ€™s functions and patching any bugs in the de-identification tool.
 
 ## Unfinished Work
-If applicable, explain the work you did not finish in this sprint. For issues/user stories in the current sprint that have not been closed, (a) any progress toward completion of the issues has been clearly tracked (by checking the checkboxes of acceptance criteria), (b) a comment has been added to the issue to explain why the issue could not be completed (e.g., "we ran out of time" or "we did not anticipate it would be so much work"), and (c) the issue is added to a subsequent sprint, so that it can be addressed later.
+
 
 ## Completed Issues/User Stories
 Here are links to the issues that we completed in this sprint:
 
-* URL of issue 1
-* URL of issue 2
-* URL of issue n
-
-Reminders (Remove this section when you save the file):
-
-* Each issue should be assigned to a milestone
-* Each completed issue should be assigned to a pull request
-* Each completed pull request should include a link to a "Before and After" video
-* All team members who contributed to the issue should be assigned to it on GitHub
-* Each issue should be assigned story points using a label
-* Story points contribution of each team member should be indicated in a comment
+ * [Annotation Feature](https://github.com/jjmoosman/CPTS_421_Project_ENG_DATA/issues/12)
+ * [KWIC Feature](https://github.com/jjmoosman/CPTS_421_Project_ENG_DATA/issues/11)
+ * [Redactor File Error](https://github.com/jjmoosman/CPTS_421_Project_ENG_DATA/issues/13)
 
 ## Incomplete Issues/User Stories
 Here are links to issues we worked on but did not complete in this sprint:
@@ -45,16 +36,16 @@ in this sprint (explain briefly)."
 ## Code Files for Review
 Please review the following code files, which were actively developed during this sprint, for quality:
 
-* [Name of code file 1](https://github.com/your_repo/file_extension)
-* [Name of code file 2](https://github.com/your_repo/file_extension)
-* [Name of code file 3](https://github.com/your_repo/file_extension)
+* [App.jsx](https://github.com/jjmoosman/CPTS_421_Project_ENG_DATA/tree/main/Code/Website/React_website/src)
+All of the website functionality code is in App.jsx
+* [app.py](https://github.com/jjmoosman/CPTS_421_Project_ENG_DATA/blob/main/Code/TestApp/app.py)
 
 ## Retrospective Summary
 Here's what went well:
 
-* Item 1
-* Item 2
-* Item x
+* Able to finish off Redactor app
+* Made good progress on Website functionality
+* Redactor app works well during client's demonstration
 
 Here's what we'd like to improve:
 
