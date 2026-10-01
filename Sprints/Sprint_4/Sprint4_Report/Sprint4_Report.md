@@ -1,6 +1,6 @@
 # Sprint 4 Report (8/24-9/30)
 
-## YouTube link of Sprint:
+## YouTube link of Sprint: https://youtu.be/L9NdAP5xsPk
 
 ## What's New (User Facing)
  * Website with 80% functionality
