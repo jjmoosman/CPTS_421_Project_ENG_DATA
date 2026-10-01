@@ -10,7 +10,7 @@
 This sprint focused on the building of most of the website’s functions and patching any bugs in the de-identification tool.
 
 ## Unfinished Work
-While we have some options we are considering for hosting the website, we still need to go over the options with our client before deciding on one.
+While we are considering for using GitHub for hosting the website, we still need to go over the options with our client before deciding on one.
 
 ## Completed Issues/User Stories
 Here are links to the issues that we completed in this sprint:
@@ -23,7 +23,7 @@ Here are links to the issues that we completed in this sprint:
 Here are links to issues we worked on but did not complete in this sprint:
 
 * [Website Host](https://github.com/jjmoosman/CPTS_421_Project_ENG_DATA/issues/14)
-Need to go over website host with client
+Considering GitHub for web hosting, but need to go over website host with client
 
 ## Code Files for Review
 Please review the following code files, which were actively developed during this sprint, for quality:
